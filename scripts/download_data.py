@@ -66,10 +66,16 @@ def consultar_servidor(url: str):
     """Devuelve (publicado, tamanio_en_bytes_o_None) sin descargar el archivo."""
     try:
         respuesta = requests.head(url, timeout=TIEMPO_ESPERA, allow_redirects=True)
-    except requests.RequestException:
-        return False, None
-    if not respuesta.ok:
-        return False, None
+        # El CDN de la TLC responde 403 para archivos mensuales que todavia no
+        # existen y 404 para algunas rutas antiguas. Ambos significan que ese
+        # mes no esta publicado; los demas errores si deben propagarse.
+        if respuesta.status_code in (403, 404):
+            return False, None
+        respuesta.raise_for_status()
+    except requests.RequestException as error:
+        raise requests.RequestException(
+            f"no se pudo consultar {url}: {error}"
+        ) from error
     longitud = respuesta.headers.get("Content-Length")
     return True, int(longitud) if longitud else None
 
@@ -131,7 +137,13 @@ def descargar(tipo: str, anio: int) -> dict:
             continue
 
         url = construir_url(tipo, anio, mes)
-        if not esta_publicado(url):
+        try:
+            publicado = esta_publicado(url)
+        except requests.RequestException as error:
+            print(f"  {etiqueta}  ERROR AL CONSULTAR: {error}")
+            resumen["fallidos"].append(etiqueta)
+            continue
+        if not publicado:
             print(f"  {etiqueta}  aun no publicado por la TLC")
             resumen["no_publicados"].append(etiqueta)
             continue
@@ -152,12 +164,25 @@ def descargar(tipo: str, anio: int) -> dict:
 def verificar(tipo: str, anio: int) -> dict:
     """Compara los archivos locales contra lo publicado en el servidor."""
     print(f"\n=== VERIFICACION {tipo.upper()} {anio} ===")
-    estado = {"ok": 0, "faltantes": [], "tamanio_distinto": [], "no_publicados": 0}
+    estado = {
+        "ok": 0,
+        "faltantes": [],
+        "tamanio_distinto": [],
+        "no_publicados": 0,
+        "errores": [],
+    }
 
     for mes in range(1, 13):
         etiqueta = f"{anio}-{mes:02d}"
         destino = ruta_destino(tipo, anio, mes)
-        publicado, tamanio_remoto = consultar_servidor(construir_url(tipo, anio, mes))
+        try:
+            publicado, tamanio_remoto = consultar_servidor(
+                construir_url(tipo, anio, mes)
+            )
+        except requests.RequestException as error:
+            print(f"  {etiqueta}  ERROR AL CONSULTAR: {error}")
+            estado["errores"].append(etiqueta)
+            continue
         existe = destino.exists() and destino.stat().st_size > 0
 
         if not publicado:
@@ -210,7 +235,11 @@ def main() -> int:
             for tipo in tipos:
                 estado = verificar(tipo, anio)
                 total_ok += estado["ok"]
-                problemas += len(estado["faltantes"]) + len(estado["tamanio_distinto"])
+                problemas += (
+                    len(estado["faltantes"])
+                    + len(estado["tamanio_distinto"])
+                    + len(estado["errores"])
+                )
         print("\n" + "=" * 60)
         print(f"  archivos correctos: {total_ok}")
         print(f"  con problemas     : {problemas}")

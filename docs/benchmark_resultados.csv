@@ -1,0 +1,13 @@
+volumen,consulta,parquet_s,tabla_s,factor_tabla
+1_mes,conteo_tipo,0.3733,0.0192,19.45
+1_mes,resumen_mensual,0.7756,0.0312,24.89
+1_mes,formas_pago,0.7039,0.0319,22.09
+1_mes,percentiles,0.9787,0.2581,3.79
+1_anio,conteo_tipo,0.4083,0.0323,12.64
+1_anio,resumen_mensual,1.3491,0.1252,10.77
+1_anio,formas_pago,1.8419,0.0883,20.86
+1_anio,percentiles,4.766,2.8945,1.65
+completo,conteo_tipo,0.4103,0.0325,12.63
+completo,resumen_mensual,4.5523,0.2386,19.08
+completo,formas_pago,4.5953,0.1904,24.14
+completo,percentiles,13.6221,8.9068,1.53

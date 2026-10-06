@@ -1,0 +1,194 @@
+﻿
+##### sql/08_analisis_completo.sql #####
+
+----------------------------------------------------------------------
+-- 08_analisis_completo.sql  (Ejercicio 8)
+-- Comparaciones de 2024, 2025 y 2026. Para evitar comparar doce meses contra
+-- ocho, las tendencias entre anios usan siempre enero-agosto.
+
+-- [8.3] Archivos y filas incorporados por tipo y anio.
+SELECT taxi_type, anio, count(DISTINCT source_file) AS archivos, count(*) AS filas
+FROM taxi_trips
+GROUP BY ALL
+ORDER BY taxi_type, anio
+
+taxi_type  anio  archivos    filas
+    green  2024        12   660218
+    green  2025        12   591375
+    green  2026         8   337114
+   yellow  2024        12 41169720
+   yellow  2025        12 48722602
+   yellow  2026         8 29703355
+
+[0.602 s]
+
+----------------------------------------------------------------------
+-- [8.5a] Evolucion mensual, normalizada por cantidad de dias observados.
+SELECT taxi_type, anio, mes, count(*) AS viajes,
+       count(DISTINCT pickup_ts::DATE) AS dias,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
+FROM taxi_trips
+WHERE es_valido
+GROUP BY ALL
+ORDER BY taxi_type, anio, mes
+
+taxi_type  anio  mes  viajes  dias  viajes_por_dia
+    green  2024    1   56322    31          1817.0
+    green  2024    2   53378    29          1841.0
+    green  2024    3   57227    31          1846.0
+    green  2024    4   56210    30          1874.0
+    green  2024    5   60725    31          1959.0
+    green  2024    6   54526    30          1818.0
+    green  2024    7   51604    31          1665.0
+    green  2024    8   51522    31          1662.0
+    green  2024    9   54183    30          1806.0
+    green  2024   10   55951    31          1805.0
+    green  2024   11   52047    30          1735.0
+    green  2024   12   53774    31          1735.0
+    green  2025    1   48098    31          1552.0
+    green  2025    2   46163    28          1649.0
+    green  2025    3   50937    31          1643.0
+    green  2025    4   51584    30          1719.0
+    green  2025    5   54888    31          1771.0
+    green  2025    6   48880    30          1629.0
+    green  2025    7   47952    31          1547.0
+    green  2025    8   46065    31          1486.0
+    green  2025    9   48698    30          1623.0
+    green  2025   10   49213    31          1588.0
+    green  2025   11   46698    30          1557.0
+    green  2025   12   47976    31          1548.0
+    green  2026    1   40074    31          1293.0
+    green  2026    2   37185    28          1328.0
+    green  2026    3   44043    31          1421.0
+    green  2026    4   44018    30          1467.0
+    green  2026    5   44664    31          1441.0
+    green  2026    6   43962    30          1465.0
+    green  2026    7   41031    31          1324.0
+    green  2026    8   40464    31          1305.0
+   yellow  2024    1 2926552    31         94405.0
+   yellow  2024    2 2966321    29        102287.0
+   yellow  2024    3 3523425    31        113659.0
+   yellow  2024    4 3456034    30        115201.0
+   yellow  2024    5 3663226    31        118169.0
+   yellow  2024    6 3476884    30        115896.0
+   yellow  2024    7 3017677    31         97344.0
+   yellow  2024    8 2920252    31         94202.0
+   yellow  2024    9 3559064    30        118635.0
+   yellow  2024   10 3757560    31        121212.0
+   yellow  2024   11 3572993    30        119100.0
+   yellow  2024   12 3588601    31        115761.0
+   yellow  2025    1 3330073    31        107422.0
+   yellow  2025    2 3393921    28        121211.0
+   yellow  2025    3 3935403    31        126948.0
+   yellow  2025    4 3782742    30        126091.0
+   yellow  2025    5 4265374    31        137593.0
+   yellow  2025    6 4046011    30        134867.0
+   yellow  2025    7 3650968    31        117773.0
+   yellow  2025    8 3312074    31        106841.0
+   yellow  2025    9 3997255    30        133242.0
+   yellow  2025   10 4106360    31        132463.0
+   yellow  2025   11 3783933    30        126131.0
+   yellow  2025   12 4255444    31        137272.0
+   yellow  2026    1 3684414    31        118852.0
+   yellow  2026    2 3372029    28        120430.0
+   yellow  2026    3 3930502    31        126790.0
+   yellow  2026    4 3815791    30        127193.0
+   yellow  2026    5 4075234    31        131459.0
+   yellow  2026    6 3822253    30        127408.0
+   yellow  2026    7 3514687    31        113377.0
+   yellow  2026    8 3320813    31        107123.0
+
+[2.211 s]
+
+----------------------------------------------------------------------
+-- [8.5b] Resumen comparable de enero-agosto.
+SELECT taxi_type, anio,
+       count(*) AS viajes,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia,
+       round(median(trip_distance) FILTER (WHERE trip_distance BETWEEN 0.01 AND 100), 2) AS distancia_mediana,
+       round(avg(total_amount), 2) AS total_promedio,
+       round(100.0 * count(*) FILTER (WHERE payment_type = 1) / count(*), 2) AS pct_tarjeta,
+       round(100.0 * count(*) FILTER (WHERE payment_type = 0 OR payment_type IS NULL) / count(*), 2) AS pct_flex
+FROM taxi_trips
+WHERE es_valido AND mes BETWEEN 1 AND 8
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio   viajes  viajes_por_dia  distancia_mediana  total_promedio  pct_tarjeta  pct_flex
+    green  2024   441514          1809.0               1.96           24.05        68.18      3.94
+    green  2025   394567          1624.0               2.02           25.03        69.97      6.67
+    green  2026   335441          1380.0               2.14           25.65        65.52     14.43
+   yellow  2024 25950371        106354.0               1.80           28.45        75.30      9.40
+   yellow  2025 29716566        122290.0               1.87           28.44        67.76     20.43
+   yellow  2026 29535723        121546.0               1.92           30.40        64.12     26.12
+
+[3.184 s]
+
+----------------------------------------------------------------------
+-- [8.5c] Cambio porcentual del volumen diario entre anios consecutivos.
+WITH resumen AS (
+    SELECT taxi_type, anio,
+           count(*) / count(DISTINCT pickup_ts::DATE) AS viajes_por_dia
+    FROM taxi_trips
+    WHERE es_valido AND mes BETWEEN 1 AND 8
+    GROUP BY taxi_type, anio
+), cambios AS (
+    SELECT *, lag(viajes_por_dia) OVER (PARTITION BY taxi_type ORDER BY anio) AS anterior
+    FROM resumen
+)
+SELECT taxi_type, anio, round(viajes_por_dia) AS viajes_por_dia,
+       round(100.0 * (viajes_por_dia - anterior) / anterior, 1) AS cambio_pct
+FROM cambios
+ORDER BY taxi_type, anio
+
+taxi_type  anio  viajes_por_dia  cambio_pct
+    green  2024          1809.0         NaN
+    green  2025          1624.0       -10.3
+    green  2026          1380.0       -15.0
+   yellow  2024        106354.0         NaN
+   yellow  2025        122290.0        15.0
+   yellow  2026        121546.0        -0.6
+
+[0.390 s]
+
+----------------------------------------------------------------------
+-- [8.5d] Evolucion de propinas con tarjeta en el periodo comparable.
+SELECT taxi_type, anio,
+       round(median(100.0 * tip_amount / fare_amount), 2) AS propina_pct_mediana,
+       round(avg(tip_amount), 2) AS propina_dolares_promedio
+FROM taxi_trips
+WHERE es_valido AND mes BETWEEN 1 AND 8
+  AND payment_type = 1 AND fare_amount > 0
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio  propina_pct_mediana  propina_dolares_promedio
+    green  2024                23.23                      3.50
+    green  2025                23.23                      3.62
+    green  2026                23.49                      3.84
+   yellow  2024                25.93                      4.31
+   yellow  2025                26.63                      4.30
+   yellow  2026                26.38                      4.28
+
+[2.133 s]
+
+----------------------------------------------------------------------
+-- [8.6] Calidad: cambio en los principales problemas por anio.
+SELECT taxi_type, anio, count(*) AS filas,
+       round(100.0 * count(*) FILTER (WHERE NOT es_valido) / count(*), 2) AS pct_invalidos,
+       round(100.0 * count(*) FILTER (WHERE trip_distance <= 0) / count(*), 2) AS pct_distancia_no_positiva,
+       round(100.0 * count(*) FILTER (WHERE passenger_count IS NULL) / count(*), 2) AS pct_pasajeros_nulos
+FROM taxi_trips
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio    filas  pct_invalidos  pct_distancia_no_positiva  pct_pasajeros_nulos
+    green  2024   660218           0.42                       5.24                 3.68
+    green  2025   591375           0.71                       4.13                 8.43
+    green  2026   337114           0.50                       3.62                14.47
+   yellow  2024 41169720           1.80                       1.89                 9.94
+   yellow  2025 48722602           5.88                       2.88                23.83
+   yellow  2026 29703355           0.56                       3.21                25.98
+
+[0.541 s]
+

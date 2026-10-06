@@ -4,6 +4,7 @@
 Uso (dentro del contenedor, desde /workspace):
     python scripts/run_sql.py sql/00_vistas.sql sql/03_exploracion.sql
     python scripts/run_sql.py --db data/processed/taxi.duckdb sql/00_vistas.sql sql/04_eda.sql
+    python scripts/run_sql.py --read-only --db data/processed/taxi.duckdb sql/07_indicadores.sql
 
 Todos los archivos corren en la misma conexion, asi que las vistas creadas en
 00_vistas.sql quedan disponibles para los siguientes. Cada sentencia se
@@ -35,9 +36,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("archivos", nargs="+", type=Path)
     parser.add_argument("--db", default=":memory:", help="base DuckDB (por defecto en memoria)")
+    parser.add_argument(
+        "--read-only", action="store_true",
+        help="abre una base existente sin permiso de escritura",
+    )
     args = parser.parse_args()
 
-    con = duckdb.connect(args.db)
+    con = duckdb.connect(args.db, read_only=args.read_only)
     for archivo in args.archivos:
         print(f"\n##### {archivo} #####")
         for sql in sentencias(archivo.read_text(encoding="utf-8")):

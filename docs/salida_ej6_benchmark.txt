@@ -1,0 +1,18 @@
+﻿Filas verificadas: 121,184,384
+Repeticiones medidas por caso: 3
+
+1_mes    | conteo_tipo      | parquet  0.3733 s | tabla  0.0192 s | factor 19.45x
+1_mes    | resumen_mensual  | parquet  0.7756 s | tabla  0.0312 s | factor 24.89x
+1_mes    | formas_pago      | parquet  0.7039 s | tabla  0.0319 s | factor 22.09x
+1_mes    | percentiles      | parquet  0.9787 s | tabla  0.2581 s | factor  3.79x
+1_anio   | conteo_tipo      | parquet  0.4083 s | tabla  0.0323 s | factor 12.64x
+1_anio   | resumen_mensual  | parquet  1.3491 s | tabla  0.1252 s | factor 10.77x
+1_anio   | formas_pago      | parquet  1.8419 s | tabla  0.0883 s | factor 20.86x
+1_anio   | percentiles      | parquet  4.7660 s | tabla  2.8945 s | factor  1.65x
+completo | conteo_tipo      | parquet  0.4103 s | tabla  0.0325 s | factor 12.63x
+completo | resumen_mensual  | parquet  4.5523 s | tabla  0.2386 s | factor 19.08x
+completo | formas_pago      | parquet  4.5953 s | tabla  0.1904 s | factor 24.14x
+completo | percentiles      | parquet 13.6221 s | tabla  8.9068 s | factor  1.53x
+
+Resultados: docs/benchmark_resultados.csv
+

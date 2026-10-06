@@ -1,6 +1,9 @@
 # Documentacion de consultas
 
-Para cada consulta: objetivo, fuente, resultado y decision. La consulta SQL esta en el archivo indicado (la etiqueta entre corchetes es el comentario que la identifica). Los resultados se llenan despues de ejecutar `scripts/run_sql.py` sobre los datos reales.
+Para cada consulta se documentan el objetivo, la fuente, el resultado y la
+decision tomada. La consulta SQL esta en el archivo indicado; la etiqueta entre
+corchetes es el comentario que la identifica. Los resultados se obtuvieron al
+ejecutar `scripts/run_sql.py` sobre los datos descargados.
 
 Fuente de todas: `data/raw/yellow/*/*.parquet` y `data/raw/green/*/*.parquet`, a traves de las vistas de `sql/00_vistas.sql`.
 
@@ -18,9 +21,9 @@ Salida completa de la ejecucion en `docs/salida_ej3.txt`.
 | [3.6a] | `SUMMARIZE` por columna | Ver problemas abajo. `SUMMARIZE` de yellow tardo 12 s por ser 29.7 M de filas | |
 | [3.6b] | Conteo de problemas de calidad | Ver tabla abajo | Filtros para `trips_limpios` |
 | [3.6c] | Mes real de las fechas de pickup | Hay fechas de 2001, 2008, 2009 y diciembre de 2025 dentro de los archivos de 2026 | Excluir lo que no cae en el mes del archivo |
-| [3.6d] | Valores de `request_source` | Nulo en 90.2 % de yellow y 94.3 % de green. Los valores son `HV0003` (2.3 M en yellow), `A`, `HV0005`, `EH0004`, `CC` y `EH0010` | Segun el esquema de Parquet (consulta 5.7), la columna solo existe en 3 de los 8 archivos de 2026 de cada tipo, asi que buena parte de los nulos son meses donde la columna no venia. No se usa en los indicadores. Falta confirmar el significado de cada codigo en el diccionario de datos de la TLC |
+| [3.6d] | Valores de `request_source` | Nulo en 90.2 % de yellow y 94.3 % de green. Los valores son `HV0003` (2.3 M en yellow), `A`, `HV0005`, `EH0004`, `CC` y `EH0010` | Segun el esquema de Parquet (consulta 5.7), la columna solo existe en 3 de los 8 archivos de 2026 de cada tipo, asi que buena parte de los nulos son meses donde la columna no venia. Los diccionarios oficiales de yellow y green no describen estos codigos; se conserva sin interpretar y no se usa en los indicadores |
 | [3.6e] | Nulos de `passenger_count` por mes | Yellow entre 20.9 % (abril) y 30.1 % (febrero), green entre 12.8 % y 15.6 %. Pasa en todos los meses | No es un archivo danado. No se descartan esas filas, solo se excluyen al calcular promedios de pasajeros |
-| [3.6f] | Viajes con distancia cero: tarifa y duracion | _pendiente de ejecutar_ | Decidir si se descartan o se tratan aparte |
+| [3.6f] | Viajes con distancia cero: tarifa y duracion | Yellow: 952,231 viajes, 97.9 % con tarifa positiva. Green: 12,212, 95.7 % con tarifa positiva | Se conservan para volumen y pagos, pero se excluyen de medidas de distancia |
 
 ### Problemas de calidad encontrados (3.6)
 
@@ -42,7 +45,9 @@ Otros puntos que salen de `SUMMARIZE`:
 - La distancia maxima es de 328,522 millas en yellow y 179,830 en green, y el promedio de yellow (5.55) esta inflado por esas colas, con desviacion estandar de 550. Para describir viajes tipicos conviene la mediana.
 - Hay tarifas de -2,555 y de 7,045 dolares en yellow. La propina minima es -222 y la maxima 766.
 - `ehail_fee` en green no tiene ningun valor, es una columna vacia.
-- `RatecodeID` llega a 99 y el promedio en yellow (4.5) sugiere que ese valor es frecuente. Falta confirmarlo con una consulta antes de descartar o recodificar.
+- `RatecodeID` llega a 99 y el promedio en yellow (4.5) queda influido por ese
+  valor. El diccionario oficial lo define como nulo o desconocido, por lo que no
+  se interpreta como una tarifa y no se recodifica.
 - En yellow hay `payment_type` igual a 0, que no existe en green.
 
 ### 3.9 Que significa consultar directo un Parquet
@@ -61,10 +66,19 @@ Consultar directo significa que DuckDB lee el archivo en el momento de la consul
 | Como se paga y cuanto se propina | [Q7], [Q8] | La propina solo se registra con tarjeta, por eso se filtra |
 | Que valores son atipicos o inconsistentes | [Q9], [Q10] | Percentil 99 contra maximo, velocidades imposibles |
 
-Resultados e interpretacion: _pendiente de ejecutar sobre los datos reales_.
+Resultados e interpretacion: `docs/analisis_exploratorio.md`.
 
 ### Hallazgos relevantes (4.5)
 
-1. _pendiente_
-2. _pendiente_
-3. _pendiente_
+1. Los viajes Flex Fare explican los pasajeros nulos y deben analizarse como una categoria distinta.
+2. Yellow tiene mas actividad nocturna, viajes mas largos y tarifas mayores que green.
+3. La demanda baja despues de mayo tanto en 2024 como en 2026, lo que apunta a un patron estacional.
+4. Los valores extremos de distancia hacen necesario usar mediana y percentiles.
+
+## Ejercicios 5 a 9
+
+- Incorporacion de 2024: `docs/incorporacion_2024.md`.
+- Benchmark: `docs/benchmark.md`.
+- Indicadores y tablero: `docs/indicadores.md`.
+- Analisis 2024-2026: `docs/analisis_2024_2026.md`.
+- Discusion: `docs/discusion.md`.

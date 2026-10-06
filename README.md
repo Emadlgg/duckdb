@@ -1,11 +1,16 @@
 # Lab 8 - DuckDB
 
+## Integrantes
+
+Osman de Leon
+Milton Polanco
+
 Repositorio base del laboratorio 8 del curso **CC3084 - Data Science**
 (Universidad del Valle de Guatemala, Ciclo 2, 2026).
 
-Este es el repositorio **proporcionado por el docente**. Contiene la estructura
-del proyecto, el ambiente de ejecucion basado en Docker y un script que descarga
-los datos de **2026**. Todo lo demas debe ser construido por cada equipo.
+Este fork contiene el flujo completo del laboratorio: descarga incremental,
+consultas directas a Parquet, analisis exploratorio, tabla materializada,
+benchmark y tablero de indicadores para 2024, 2025 y 2026.
 
 ## Trabajo con fork
 
@@ -18,7 +23,7 @@ No se trabaja directamente sobre el repositorio del docente.
 2. Clone **su propio fork** (no el del docente):
 
    ```bash
-   git clone https://github.com/<su-usuario>/duckdb.git
+   git clone https://github.com/Emadlgg/duckdb.git
    cd duckdb
    ```
 
@@ -70,7 +75,7 @@ base materializada del Ejercicio 6. Se recomienda tener al menos 10 GB libres.
 ## Datos
 
 El repositorio incluye `scripts/download_data.py`, que descarga los archivos de
-2026 publicados por la TLC (`--help` muestra las opciones disponibles). Los
+yellow y green de los anios solicitados (`--help` muestra las opciones). Los
 archivos se guardan en `data/raw/<tipo>/<anio>/`.
 
 La TLC publica cada mes con varias semanas de atraso, por lo que los ultimos
@@ -104,7 +109,7 @@ Al finalizar, su fork debe contener:
 - los scripts utilizados para los benchmarks;
 - el codigo de los indicadores y visualizaciones;
 - el tablero o la evidencia del tablero desarrollado;
-- este `README.md`, completado segun la siguiente seccion.
+- este `README.md`, con las instrucciones para reproducir el trabajo.
 
 Los archivos de datos descargados **no** deben incluirse.
 
@@ -112,17 +117,16 @@ Los archivos de datos descargados **no** deben incluirse.
 
 # Documentacion del equipo
 
-Las siguientes secciones deben ser completadas por cada equipo. El README final
-debe permitir que una persona que no participo en el desarrollo pueda levantar el
-ambiente, descargar los datos, ejecutar el analisis, reproducir los benchmarks y
-generar los resultados principales.
+Las siguientes secciones permiten que una persona que no participo en el
+desarrollo pueda levantar el ambiente, descargar los datos, ejecutar el analisis,
+reproducir los benchmarks y generar los resultados principales.
 
 ## Como levantar el ambiente
 
 Requisitos: Docker con Docker Compose y Git.
 
 ```bash
-git clone https://github.com/<su-usuario>/duckdb.git
+git clone https://github.com/Emadlgg/duckdb.git
 cd duckdb
 docker compose up --build -d
 ```
@@ -160,6 +164,10 @@ un archivo que ya existe, y `--verify` compara cada archivo local contra el
 tamano que reporta el servidor para confirmar que la descarga esta completa.
 Los cambios hechos al script estan en `docs/ejercicios_1_2.md`.
 
+Al 6 de octubre de 2026 se esperan 64 archivos: 24 de 2024, 24 de 2025 y
+16 de 2026, porque la TLC ha publicado enero-agosto. `--verify` distingue los
+meses no publicados de errores de red o del servidor.
+
 ## Como ejecutar el analisis
 
 Las consultas estan en `sql/` y se ejecutan en orden dentro del contenedor:
@@ -167,6 +175,7 @@ Las consultas estan en `sql/` y se ejecutan en orden dentro del contenedor:
 ```bash
 docker compose exec lab python scripts/run_sql.py sql/00_vistas.sql sql/03_exploracion.sql
 docker compose exec lab python scripts/run_sql.py sql/00_vistas.sql sql/04_eda.sql
+docker compose exec lab python scripts/run_sql.py sql/00_vistas.sql sql/05_incorporacion.sql
 ```
 
 `00_vistas.sql` crea las vistas sobre los Parquet (`data/raw/*/*/*.parquet`),
@@ -175,8 +184,54 @@ documentacion de cada consulta esta en `docs/consultas.md`.
 
 ## Como reproducir los benchmarks
 
-<!-- TODO (Ejercicio 6) -->
+Primero se crea la tabla materializada. La base queda en `data/processed/` y no
+se versiona:
+
+```bash
+docker compose exec lab python scripts/run_sql.py --db data/processed/taxi.duckdb sql/00_vistas.sql sql/06_materializacion.sql
+docker compose exec lab python scripts/benchmark.py
+```
+
+El benchmark hace una ejecucion de calentamiento y tres mediciones por caso,
+comprueba que Parquet y tabla den el mismo resultado y guarda la tabla en
+`docs/benchmark_resultados.csv`. La metodologia e interpretacion estan en
+`docs/benchmark.md`.
 
 ## Como generar los resultados principales
 
-<!-- TODO -->
+Con la tabla creada:
+
+```bash
+docker compose exec lab python scripts/run_sql.py --read-only --db data/processed/taxi.duckdb sql/07_indicadores.sql
+docker compose exec lab python scripts/run_sql.py --read-only --db data/processed/taxi.duckdb sql/08_analisis_completo.sql
+```
+
+El notebook `notebooks/resumen_indicadores.ipynb` reproduce un resumen grafico
+desde JupyterLab. Las salidas detalladas estan en `docs/salida_ej7.txt` y
+`docs/salida_ej8.txt`.
+
+### Tablero de Metabase
+
+1. Abra <http://localhost:3000> y cree el usuario administrador la primera vez.
+2. Ejecute el constructor indicando ese correo y contrasena. El script crea la
+   conexion DuckDB de solo lectura, diez preguntas y el tablero:
+
+   ```bash
+   docker compose exec -e METABASE_EMAIL=correo-usado -e METABASE_PASSWORD=contrasena-usada lab python scripts/create_dashboard.py
+   ```
+
+3. Abra la coleccion `Lab 8 - DuckDB` y el tablero `NYC Taxi: 2024-2026`.
+
+La contrasena solo se pasa al proceso y no se guarda en el repositorio. La
+evidencia exportada del tablero esta en `output/pdf/tablero_metabase.pdf`.
+
+## Documentacion de resultados
+
+- Ejercicios 1 y 2: `docs/ejercicios_1_2.md`.
+- Ejercicio 3: `docs/consultas.md` y `docs/salida_ej3.txt`.
+- Ejercicio 4: `docs/analisis_exploratorio.md`.
+- Ejercicio 5: `docs/incorporacion_2024.md`.
+- Ejercicio 6: `docs/benchmark.md`.
+- Ejercicio 7: `docs/indicadores.md`.
+- Ejercicio 8: `docs/analisis_2024_2026.md`.
+- Ejercicio 9: `docs/discusion.md`.

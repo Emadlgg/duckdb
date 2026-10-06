@@ -27,6 +27,7 @@
 - El anio paso a ser parametro: `--years` acepta uno o varios anios (por defecto 2026, que es lo que pide el ejercicio 2). Para los ejercicios 5 y 8 solo se cambia el comando, no el codigo.
 - `construir_nombre`, `construir_url` y `ruta_destino` reciben el anio.
 - Se agrego `--verify`, que compara cada archivo local con el `Content-Length` que devuelve el servidor y lista faltantes o archivos de tamano distinto.
+- La consulta al servidor distingue meses no publicados (`403` o `404` en el CDN de la TLC) de timeouts, limites de solicitudes y errores 5xx. Estos ultimos hacen que el proceso termine con error en vez de reportar una verificacion correcta.
 - Se mantuvo lo que ya hacia bien: preguntar al servidor que meses estan publicados, omitir archivos existentes y descargar a un `.part` que se renombra al terminar.
 
 **2.7 Como saber que esta completo.** Se ejecuta `--verify`. Cada mes publicado debe tener su archivo local con el mismo tamano que reporta el servidor, y los meses que aparecen como "no publicado" deben ser los ultimos del anio, que la TLC todavia no sube. Despues se confirma con DuckDB que el conteo de archivos (consulta 3.1) coincide, y que la suma de filas en los metadatos (3.2a) coincide con el conteo real (3.2b).

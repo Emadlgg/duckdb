@@ -1,0 +1,453 @@
+﻿
+##### sql/07_indicadores.sql #####
+
+----------------------------------------------------------------------
+-- 07_indicadores.sql  (Ejercicio 7)
+-- Diez preguntas para el tablero. Todas usan la tabla materializada y, salvo
+-- el indicador de calidad, trabajan solo con registros marcados como validos.
+
+-- [I1] Como cambia el volumen de viajes cada mes y por tipo de taxi?
+SELECT taxi_type, make_date(anio, mes, 1) AS mes, count(*) AS viajes
+FROM taxi_trips
+WHERE es_valido
+GROUP BY ALL
+ORDER BY taxi_type, mes
+
+taxi_type        mes  viajes
+    green 2024-01-01   56322
+    green 2024-02-01   53378
+    green 2024-03-01   57227
+    green 2024-04-01   56210
+    green 2024-05-01   60725
+    green 2024-06-01   54526
+    green 2024-07-01   51604
+    green 2024-08-01   51522
+    green 2024-09-01   54183
+    green 2024-10-01   55951
+    green 2024-11-01   52047
+    green 2024-12-01   53774
+    green 2025-01-01   48098
+    green 2025-02-01   46163
+    green 2025-03-01   50937
+    green 2025-04-01   51584
+    green 2025-05-01   54888
+    green 2025-06-01   48880
+    green 2025-07-01   47952
+    green 2025-08-01   46065
+    green 2025-09-01   48698
+    green 2025-10-01   49213
+    green 2025-11-01   46698
+    green 2025-12-01   47976
+    green 2026-01-01   40074
+    green 2026-02-01   37185
+    green 2026-03-01   44043
+    green 2026-04-01   44018
+    green 2026-05-01   44664
+    green 2026-06-01   43962
+    green 2026-07-01   41031
+    green 2026-08-01   40464
+   yellow 2024-01-01 2926552
+   yellow 2024-02-01 2966321
+   yellow 2024-03-01 3523425
+   yellow 2024-04-01 3456034
+   yellow 2024-05-01 3663226
+   yellow 2024-06-01 3476884
+   yellow 2024-07-01 3017677
+   yellow 2024-08-01 2920252
+   yellow 2024-09-01 3559064
+   yellow 2024-10-01 3757560
+   yellow 2024-11-01 3572993
+   yellow 2024-12-01 3588601
+   yellow 2025-01-01 3330073
+   yellow 2025-02-01 3393921
+   yellow 2025-03-01 3935403
+   yellow 2025-04-01 3782742
+   yellow 2025-05-01 4265374
+   yellow 2025-06-01 4046011
+   yellow 2025-07-01 3650968
+   yellow 2025-08-01 3312074
+   yellow 2025-09-01 3997255
+   yellow 2025-10-01 4106360
+   yellow 2025-11-01 3783933
+   yellow 2025-12-01 4255444
+   yellow 2026-01-01 3684414
+   yellow 2026-02-01 3372029
+   yellow 2026-03-01 3930502
+   yellow 2026-04-01 3815791
+   yellow 2026-05-01 4075234
+   yellow 2026-06-01 3822253
+   yellow 2026-07-01 3514687
+   yellow 2026-08-01 3320813
+
+[0.496 s]
+
+----------------------------------------------------------------------
+-- [I2] Cual es el promedio diario de viajes por anio?
+SELECT taxi_type, anio, count(*) AS viajes,
+       count(DISTINCT pickup_ts::DATE) AS dias,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
+FROM taxi_trips
+WHERE es_valido
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio   viajes  dias  viajes_por_dia
+    green  2024   657469   366          1796.0
+    green  2025   587152   365          1609.0
+    green  2026   335441   243          1380.0
+   yellow  2024 40428589   366        110461.0
+   yellow  2025 45859558   365        125643.0
+   yellow  2026 29535723   243        121546.0
+
+[1.776 s]
+
+----------------------------------------------------------------------
+-- [I3] En que hora se concentra la demanda de cada anio?
+SELECT taxi_type, anio, hour(pickup_ts) AS hora, count(*) AS viajes
+FROM taxi_trips
+WHERE es_valido
+GROUP BY ALL
+ORDER BY taxi_type, anio, hora
+
+taxi_type  anio  hora  viajes
+    green  2024     0   12127
+    green  2024     1    8435
+    green  2024     2    6043
+    green  2024     3    4584
+    green  2024     4    4001
+    green  2024     5    3970
+    green  2024     6   10185
+    green  2024     7   23404
+    green  2024     8   30526
+    green  2024     9   34005
+    green  2024    10   33913
+    green  2024    11   34121
+    green  2024    12   35707
+    green  2024    13   36059
+    green  2024    14   41661
+    green  2024    15   45414
+    green  2024    16   49229
+    green  2024    17   53402
+    green  2024    18   51140
+    green  2024    19   40577
+    green  2024    20   31192
+    green  2024    21   27248
+    green  2024    22   22628
+    green  2024    23   17898
+    green  2025     0    9638
+    green  2025     1    6429
+    green  2025     2    4541
+    green  2025     3    3584
+    green  2025     4    3522
+    green  2025     5    4154
+    green  2025     6   10670
+    green  2025     7   22809
+    green  2025     8   29619
+    green  2025     9   31503
+    green  2025    10   31340
+    green  2025    11   31065
+    green  2025    12   33282
+    green  2025    13   33520
+    green  2025    14   36980
+    green  2025    15   40245
+    green  2025    16   44033
+    green  2025    17   46833
+    green  2025    18   44184
+    green  2025    19   34530
+    green  2025    20   26622
+    green  2025    21   23052
+    green  2025    22   19799
+    green  2025    23   15198
+    green  2026     0    5248
+    green  2026     1    3338
+    green  2026     2    2431
+    green  2026     3    2021
+    green  2026     4    2049
+    green  2026     5    2640
+    green  2026     6    6795
+    green  2026     7   14181
+    green  2026     8   17858
+    green  2026     9   18737
+    green  2026    10   18192
+    green  2026    11   18119
+    green  2026    12   19617
+    green  2026    13   19221
+    green  2026    14   21514
+    green  2026    15   23269
+    green  2026    16   25216
+    green  2026    17   26121
+    green  2026    18   24622
+    green  2026    19   18475
+    green  2026    20   14191
+    green  2026    21   12645
+    green  2026    22   10966
+    green  2026    23    7975
+   yellow  2024     0 1165280
+   yellow  2024     1  755898
+   yellow  2024     2  491843
+   yellow  2024     3  322307
+   yellow  2024     4  236391
+   yellow  2024     5  257339
+   yellow  2024     6  574572
+   yellow  2024     7 1116878
+   yellow  2024     8 1541964
+   yellow  2024     9 1684925
+   yellow  2024    10 1804046
+   yellow  2024    11 1959949
+   yellow  2024    12 2143300
+   yellow  2024    13 2228693
+   yellow  2024    14 2391073
+   yellow  2024    15 2468907
+   yellow  2024    16 2515852
+   yellow  2024    17 2764058
+   yellow  2024    18 2902922
+   yellow  2024    19 2549489
+   yellow  2024    20 2313113
+   yellow  2024    21 2360651
+   yellow  2024    22 2184688
+   yellow  2024    23 1694451
+   yellow  2025     0 1414316
+   yellow  2025     1  931644
+   yellow  2025     2  612074
+   yellow  2025     3  416939
+   yellow  2025     4  330952
+   yellow  2025     5  353279
+   yellow  2025     6  704397
+   yellow  2025     7 1301692
+   yellow  2025     8 1763812
+   yellow  2025     9 1898052
+   yellow  2025    10 1991152
+   yellow  2025    11 2136730
+   yellow  2025    12 2325800
+   yellow  2025    13 2435825
+   yellow  2025    14 2613011
+   yellow  2025    15 2717146
+   yellow  2025    16 2786653
+   yellow  2025    17 3104821
+   yellow  2025    18 3259392
+   yellow  2025    19 2881874
+   yellow  2025    20 2649904
+   yellow  2025    21 2712844
+   yellow  2025    22 2531060
+   yellow  2025    23 1986189
+   yellow  2026     0  927701
+   yellow  2026     1  617768
+   yellow  2026     2  412365
+   yellow  2026     3  296809
+   yellow  2026     4  243286
+   yellow  2026     5  268130
+   yellow  2026     6  502090
+   yellow  2026     7  876692
+   yellow  2026     8 1178487
+   yellow  2026     9 1236307
+   yellow  2026    10 1251953
+   yellow  2026    11 1350428
+   yellow  2026    12 1460769
+   yellow  2026    13 1528483
+   yellow  2026    14 1657227
+   yellow  2026    15 1714083
+   yellow  2026    16 1762972
+   yellow  2026    17 1986575
+   yellow  2026    18 2079532
+   yellow  2026    19 1830142
+   yellow  2026    20 1689423
+   yellow  2026    21 1749674
+   yellow  2026    22 1623853
+   yellow  2026    23 1290974
+
+[0.305 s]
+
+----------------------------------------------------------------------
+-- [I4] Como cambia la distancia del viaje tipico?
+SELECT taxi_type, anio,
+       round(median(trip_distance), 2) AS distancia_mediana,
+       round(quantile_cont(trip_distance, 0.95), 2) AS distancia_p95
+FROM taxi_trips
+WHERE es_valido AND trip_distance BETWEEN 0.01 AND 100
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio  distancia_mediana  distancia_p95
+    green  2024               1.97           8.68
+    green  2025               2.07           9.94
+    green  2026               2.14          10.66
+   yellow  2024               1.80          14.50
+   yellow  2025               1.89          13.18
+   yellow  2026               1.92          12.51
+
+[3.541 s]
+
+----------------------------------------------------------------------
+-- [I5] Como evolucionan la tarifa y el monto total promedio?
+SELECT taxi_type, anio,
+       round(avg(fare_amount), 2) AS tarifa_promedio,
+       round(avg(total_amount), 2) AS total_promedio
+FROM taxi_trips
+WHERE es_valido
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio  tarifa_promedio  total_promedio
+    green  2024            18.46           24.40
+    green  2025            18.23           25.37
+    green  2026            17.12           25.65
+   yellow  2024            19.96           28.75
+   yellow  2025            20.18           28.95
+   yellow  2026            21.51           30.40
+
+[1.659 s]
+
+----------------------------------------------------------------------
+-- [I6] Que formas de pago predominan y como cambian por anio?
+SELECT taxi_type, anio, coalesce(payment_type, -1) AS tipo_pago,
+       count(*) AS viajes,
+       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY taxi_type, anio), 2) AS porcentaje
+FROM taxi_trips
+WHERE es_valido
+GROUP BY taxi_type, anio, payment_type
+ORDER BY taxi_type, anio, viajes DESC
+
+taxi_type  anio  tipo_pago   viajes  porcentaje
+    green  2024          1   454426       69.12
+    green  2024          2   174833       26.59
+    green  2024         -1    24307        3.70
+    green  2024          3     2963        0.45
+    green  2024          4      912        0.14
+    green  2024          5       28        0.00
+    green  2025          1   406372       69.21
+    green  2025          2   129663       22.08
+    green  2025         -1    48052        8.18
+    green  2025          3     2326        0.40
+    green  2025          4      718        0.12
+    green  2025          5       21        0.00
+    green  2026          1   219766       65.52
+    green  2026          2    65812       19.62
+    green  2026         -1    48401       14.43
+    green  2026          3     1062        0.32
+    green  2026          4      400        0.12
+   yellow  2024          1 30449858       75.32
+   yellow  2024          2  5391986       13.34
+   yellow  2024          0  3963151        9.80
+   yellow  2024          4   423599        1.05
+   yellow  2024          3   199994        0.49
+   yellow  2024          5        1        0.00
+   yellow  2025          1 31051286       67.71
+   yellow  2025          0  9562868       20.85
+   yellow  2025          2  4462092        9.73
+   yellow  2025          4   577285        1.26
+   yellow  2025          3   206026        0.45
+   yellow  2025          5        1        0.00
+   yellow  2026          1 18937255       64.12
+   yellow  2026          0  7715673       26.12
+   yellow  2026          2  2667598        9.03
+   yellow  2026          4   136090        0.46
+   yellow  2026          3    79107        0.27
+
+[0.565 s]
+
+----------------------------------------------------------------------
+-- [I7] Cuanto se deja de propina en los viajes pagados con tarjeta?
+SELECT taxi_type, anio,
+       round(avg(100.0 * tip_amount / fare_amount), 2) AS propina_pct_promedio,
+       round(median(100.0 * tip_amount / fare_amount), 2) AS propina_pct_mediana
+FROM taxi_trips
+WHERE es_valido AND payment_type = 1 AND fare_amount > 0
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio  propina_pct_promedio  propina_pct_mediana
+    green  2024                 22.33                23.23
+    green  2025                 22.86                23.23
+    green  2026                 25.64                23.49
+   yellow  2024                 26.19                25.75
+   yellow  2025                 26.52                26.40
+   yellow  2026                 25.44                26.38
+
+[2.003 s]
+
+----------------------------------------------------------------------
+-- [I8] Que proporcion de los registros presenta inconsistencias?
+SELECT taxi_type, anio, count(*) AS registros,
+       count(*) FILTER (WHERE NOT es_valido) AS inconsistentes,
+       round(100.0 * count(*) FILTER (WHERE NOT es_valido) / count(*), 2) AS porcentaje
+FROM taxi_trips
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio  registros  inconsistentes  porcentaje
+    green  2024     660218            2749        0.42
+    green  2025     591375            4223        0.71
+    green  2026     337114            1673        0.50
+   yellow  2024   41169720          741131        1.80
+   yellow  2025   48722602         2863044        5.88
+   yellow  2026   29703355          167632        0.56
+
+[0.202 s]
+
+----------------------------------------------------------------------
+-- [I9] Cuales son las cinco zonas de origen con mas viajes por tipo y anio?
+WITH zonas AS (
+    SELECT taxi_type, anio, PULocationID, count(*) AS viajes,
+           row_number() OVER (PARTITION BY taxi_type, anio ORDER BY count(*) DESC) AS posicion
+    FROM taxi_trips
+    WHERE es_valido
+    GROUP BY taxi_type, anio, PULocationID
+)
+SELECT taxi_type, anio, PULocationID, viajes
+FROM zonas
+WHERE posicion <= 5
+ORDER BY taxi_type, anio, viajes DESC
+
+taxi_type  anio  PULocationID  viajes
+    green  2024            74  149460
+    green  2024            75   91086
+    green  2024           166   33314
+    green  2024            95   32603
+    green  2024            43   32566
+    green  2025            74  144746
+    green  2025            75   83283
+    green  2025            43   27629
+    green  2025            95   26672
+    green  2025           166   26417
+    green  2026            74   88234
+    green  2026            75   43003
+    green  2026            95   16135
+    green  2026            43   13274
+    green  2026           166   12680
+   yellow  2024           132 1909590
+   yellow  2024           237 1889083
+   yellow  2024           161 1882622
+   yellow  2024           236 1709411
+   yellow  2024           162 1397381
+   yellow  2025           237 2063008
+   yellow  2025           161 2007854
+   yellow  2025           132 1930576
+   yellow  2025           236 1809873
+   yellow  2025           186 1484706
+   yellow  2026           237 1300779
+   yellow  2026           161 1215984
+   yellow  2026           236 1164095
+   yellow  2026           132 1157767
+   yellow  2026           186  898165
+
+[0.809 s]
+
+----------------------------------------------------------------------
+-- [I10] Como cambia el volumen entre anios usando el mismo periodo enero-agosto?
+SELECT taxi_type, anio, count(*) AS viajes_enero_agosto,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
+FROM taxi_trips
+WHERE es_valido AND mes BETWEEN 1 AND 8
+GROUP BY taxi_type, anio
+ORDER BY taxi_type, anio
+
+taxi_type  anio  viajes_enero_agosto  viajes_por_dia
+    green  2024               441514          1809.0
+    green  2025               394567          1624.0
+    green  2026               335441          1380.0
+   yellow  2024             25950371        106354.0
+   yellow  2025             29716566        122290.0
+   yellow  2026             29535723        121546.0
+
+[0.366 s]
+

@@ -20,7 +20,7 @@ Las consultas estan en `sql/05_incorporacion.sql` y la salida en `docs/salida_ej
 | [5.5a] archivos por tipo y anio | 12 archivos de 2024 y 8 de 2026, tanto en yellow como en green |
 | [5.6a] registros por anio | yellow: 41,169,720 (2024) y 29,703,355 (2026). Green: 660,218 y 337,114 |
 | [5.6b] viajes por mes, ambos anios | Los 12 meses de 2024 y los 8 de 2026 aparecen en la misma consulta |
-| [5.7a y 5.7b] columnas por anio | Los 20 archivos de cada tipo tienen las mismas columnas y los mismos tipos. `cbd_congestion_fee` solo existe en 2026 (8 archivos) y `request_source` solo en 3 archivos de 2026 |
+| [5.7a y 5.7b] columnas por anio | Las columnas comunes mantienen tipos compatibles. `cbd_congestion_fee` solo existe en 2026 (8 archivos) y `request_source` solo en 3 archivos de 2026 |
 | [5.7c] esquema final | Igual al que ya se tenia con solo 2026, mismas columnas y tipos |
 
 Nombres como `Airport_fee` se mantienen iguales en los archivos de ambos anios, asi que no hubo conflicto de nombres ni de tipos al unirlos. Las columnas que no existen en 2024 quedan como nulas, gracias a `union_by_name`.
@@ -43,7 +43,10 @@ De enero a agosto, yellow tiene 12.6 % mas viajes en 2026 que en 2024 (29.7 M co
 
 ## Diferencias que aparecen al sumar 2024
 
-Las cifras de 2024 se calcularon restando lo ya conocido de 2026 a los totales de las dos corridas, asi que son aproximadas por el filtro de `trips_limpios`.
+Las medidas de pago se calcularon sobre `trips_limpios`, mientras que los
+problemas de calidad se contaron sobre todos los registros. Esta separacion evita
+que una tarifa o una fecha invalida distorsione la mezcla de pagos, pero conserva
+esas filas al medir la calidad.
 
 | Medida (yellow) | 2024 | 2026 |
 |---|---|---|
