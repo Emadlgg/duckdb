@@ -1,0 +1,383 @@
+﻿
+##### sql/00_vistas.sql #####
+
+----------------------------------------------------------------------
+-- 00_vistas.sql
+-- Vistas base sobre los archivos Parquet. No se importa nada a una tabla.
+-- Los comodines */* cubren cualquier anio que exista en data/raw/<tipo>/<anio>/,
+-- asi que al descargar 2024 o 2025 las vistas los incluyen sin cambiar nada.
+-- union_by_name = true alinea las columnas por nombre aunque cambie el esquema entre archivos.
+-- filename = true agrega la columna filename, util para saber de que archivo viene cada fila.
+
+CREATE OR REPLACE VIEW yellow_raw AS
+SELECT * FROM read_parquet('/workspace/data/raw/yellow/*/*.parquet',
+                           union_by_name = true, filename = true)
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.026 s]
+
+----------------------------------------------------------------------
+CREATE OR REPLACE VIEW green_raw AS
+SELECT * FROM read_parquet('/workspace/data/raw/green/*/*.parquet',
+                           union_by_name = true, filename = true)
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.023 s]
+
+----------------------------------------------------------------------
+-- Vista unificada con las columnas que comparten ambos tipos de taxi.
+-- Yellow usa tpep_* y green usa lpep_* para las fechas.
+CREATE OR REPLACE VIEW trips AS
+SELECT 'yellow' AS taxi_type, filename,
+       tpep_pickup_datetime  AS pickup_ts,
+       tpep_dropoff_datetime AS dropoff_ts,
+       passenger_count, trip_distance, PULocationID, DOLocationID,
+       payment_type, fare_amount, tip_amount, tolls_amount, total_amount
+FROM yellow_raw
+UNION ALL
+SELECT 'green' AS taxi_type, filename,
+       lpep_pickup_datetime  AS pickup_ts,
+       lpep_dropoff_datetime AS dropoff_ts,
+       passenger_count, trip_distance, PULocationID, DOLocationID,
+       payment_type, fare_amount, tip_amount, tolls_amount, total_amount
+FROM green_raw
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.036 s]
+
+##### sql/04_eda.sql #####
+
+----------------------------------------------------------------------
+-- 04_eda.sql  (Ejercicio 4)
+-- Requiere sql/00_vistas.sql.
+-- trips_limpios descarta lo que 3.6 mostro como invalido: fechas fuera del mes del archivo,
+-- bajada antes de la subida, duracion de mas de 24 horas, tarifa negativa y total no positivo.
+-- No filtra por distancia: segun 3.6f los viajes con distancia 0 si tienen tarifa y duracion
+-- normales (97.9 % en yellow), asi que cuentan para volumen, horarios y pagos.
+-- trips_con_distancia es la version para analisis que usan la distancia.
+
+CREATE OR REPLACE VIEW trips_limpios AS
+SELECT *,
+       date_diff('second', pickup_ts, dropoff_ts) / 60.0 AS duracion_min
+FROM trips
+WHERE strftime(pickup_ts, '%Y-%m') = regexp_extract(filename, '(\d{4}-\d{2})\.parquet$', 1)
+  AND dropoff_ts >= pickup_ts
+  AND dropoff_ts - pickup_ts <= INTERVAL 24 HOUR
+  AND fare_amount >= 0
+  AND total_amount > 0
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.046 s]
+
+----------------------------------------------------------------------
+-- Q4 mostro promedios de distancia inflados por valores absurdos (hasta 328 mil millas),
+-- por eso esta vista tambien corta en 100 millas. Q9 y Q10 siguen sobre trips_limpios
+-- para poder reportar esos atipicos.
+CREATE OR REPLACE VIEW trips_con_distancia AS
+SELECT * FROM trips_limpios WHERE trip_distance > 0 AND trip_distance <= 100
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.050 s]
+
+----------------------------------------------------------------------
+-- [Q1] Como evoluciona el volumen de viajes mes a mes (total y por dia, para no castigar a febrero)
+SELECT taxi_type, date_trunc('month', pickup_ts)::DATE AS mes,
+       count(*) AS viajes,
+       count(DISTINCT pickup_ts::DATE) AS dias,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
+FROM trips_limpios
+GROUP BY ALL
+ORDER BY taxi_type, mes
+
+taxi_type        mes  viajes  dias  viajes_por_dia
+    green 2026-01-01   40074    31          1293.0
+    green 2026-02-01   37185    28          1328.0
+    green 2026-03-01   44043    31          1421.0
+    green 2026-04-01   44018    30          1467.0
+    green 2026-05-01   44664    31          1441.0
+    green 2026-06-01   43962    30          1465.0
+    green 2026-07-01   41031    31          1324.0
+    green 2026-08-01   40464    31          1305.0
+   yellow 2026-01-01 3684414    31        118852.0
+   yellow 2026-02-01 3372029    28        120430.0
+   yellow 2026-03-01 3930502    31        126790.0
+   yellow 2026-04-01 3815791    30        127193.0
+   yellow 2026-05-01 4075234    31        131459.0
+   yellow 2026-06-01 3822253    30        127408.0
+   yellow 2026-07-01 3514687    31        113377.0
+   yellow 2026-08-01 3320813    31        107123.0
+
+[1.515 s]
+
+----------------------------------------------------------------------
+-- [Q2] En que horas del dia se concentra la demanda
+SELECT taxi_type, hour(pickup_ts) AS hora, count(*) AS viajes
+FROM trips_limpios
+GROUP BY ALL
+ORDER BY taxi_type, hora
+
+taxi_type  hora  viajes
+    green     0    5248
+    green     1    3338
+    green     2    2431
+    green     3    2021
+    green     4    2049
+    green     5    2640
+    green     6    6795
+    green     7   14181
+    green     8   17858
+    green     9   18737
+    green    10   18192
+    green    11   18119
+    green    12   19617
+    green    13   19221
+    green    14   21514
+    green    15   23269
+    green    16   25216
+    green    17   26121
+    green    18   24622
+    green    19   18475
+    green    20   14191
+    green    21   12645
+    green    22   10966
+    green    23    7975
+   yellow     0  927701
+   yellow     1  617768
+   yellow     2  412365
+   yellow     3  296809
+   yellow     4  243286
+   yellow     5  268130
+   yellow     6  502090
+   yellow     7  876692
+   yellow     8 1178487
+   yellow     9 1236307
+   yellow    10 1251953
+   yellow    11 1350428
+   yellow    12 1460769
+   yellow    13 1528483
+   yellow    14 1657227
+   yellow    15 1714083
+   yellow    16 1762972
+   yellow    17 1986575
+   yellow    18 2079532
+   yellow    19 1830142
+   yellow    20 1689423
+   yellow    21 1749674
+   yellow    22 1623853
+   yellow    23 1290974
+
+[1.243 s]
+
+----------------------------------------------------------------------
+-- [Q3] Demanda por dia de la semana, dividida entre cuantas veces ocurre ese dia en el periodo (isodow: 1 = lunes)
+SELECT taxi_type, isodow(pickup_ts) AS dia_semana,
+       count(*) AS viajes,
+       count(DISTINCT pickup_ts::DATE) AS dias,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia,
+       round(median(trip_distance) FILTER (WHERE trip_distance > 0 AND trip_distance <= 100), 2) AS distancia_mediana
+FROM trips_limpios
+GROUP BY taxi_type, isodow(pickup_ts)
+ORDER BY taxi_type, dia_semana
+
+taxi_type  dia_semana  viajes  dias  viajes_por_dia  distancia_mediana
+    green           1   47668    35          1362.0               2.10
+    green           2   50577    34          1488.0               2.08
+    green           3   52415    34          1542.0               2.09
+    green           4   55407    35          1583.0               2.08
+    green           5   50413    35          1440.0               2.10
+    green           6   40577    35          1159.0               2.24
+    green           7   38384    35          1097.0               2.38
+   yellow           1 3531637    35        100904.0               1.93
+   yellow           2 4044055    34        118943.0               1.83
+   yellow           3 4315461    34        126925.0               1.82
+   yellow           4 4715367    35        134725.0               1.84
+   yellow           5 4482738    35        128078.0               1.89
+   yellow           6 4607006    35        131629.0               2.01
+   yellow           7 3839459    35        109699.0               2.22
+
+[1.915 s]
+
+----------------------------------------------------------------------
+-- [Q4] Como son los viajes tipicos: distancia, duracion y pasajeros
+SELECT taxi_type,
+       round(avg(trip_distance), 2)                  AS distancia_prom,
+       round(median(trip_distance), 2)               AS distancia_mediana,
+       round(quantile_cont(trip_distance, 0.95), 2)  AS distancia_p95,
+       round(avg(duracion_min), 1)                   AS duracion_prom_min,
+       round(median(duracion_min), 1)                AS duracion_mediana_min,
+       round(avg(passenger_count), 2)                AS pasajeros_prom
+FROM trips_con_distancia
+GROUP BY taxi_type
+
+taxi_type  distancia_prom  distancia_mediana  distancia_p95  duracion_prom_min  duracion_mediana_min  pasajeros_prom
+    green            3.36               2.14          10.66               21.2                  13.4            1.30
+   yellow            3.51               1.92          12.51               17.7                  14.0            1.25
+
+[3.566 s]
+
+----------------------------------------------------------------------
+-- [Q5] Distribucion de la distancia por rangos
+WITH rangos AS (
+    SELECT taxi_type,
+           CASE WHEN trip_distance < 1  THEN '0-1'
+                WHEN trip_distance < 3  THEN '1-3'
+                WHEN trip_distance < 5  THEN '3-5'
+                WHEN trip_distance < 10 THEN '5-10'
+                WHEN trip_distance < 20 THEN '10-20'
+                ELSE '20+' END AS rango_millas,
+           CASE WHEN trip_distance < 1  THEN 1
+                WHEN trip_distance < 3  THEN 2
+                WHEN trip_distance < 5  THEN 3
+                WHEN trip_distance < 10 THEN 4
+                WHEN trip_distance < 20 THEN 5
+                ELSE 6 END AS orden
+    FROM trips_con_distancia
+)
+SELECT taxi_type, rango_millas, count(*) AS viajes,
+       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY taxi_type), 2) AS porcentaje
+FROM rangos
+GROUP BY taxi_type, rango_millas, orden
+ORDER BY taxi_type, orden
+
+taxi_type rango_millas   viajes  porcentaje
+    green          0-1    44572       13.77
+    green          1-3   169952       52.50
+    green          3-5    50171       15.50
+    green         5-10    40290       12.45
+    green        10-20    16932        5.23
+    green          20+     1776        0.55
+   yellow          0-1  6018314       21.04
+   yellow          1-3 13168240       46.04
+   yellow          3-5  3817603       13.35
+   yellow         5-10  3410830       11.93
+   yellow        10-20  1942567        6.79
+   yellow          20+   243097        0.85
+
+[1.308 s]
+
+----------------------------------------------------------------------
+-- [Q6] Diferencias en tarifa entre yellow y green
+SELECT taxi_type,
+       round(avg(fare_amount), 2)  AS tarifa_prom,
+       round(avg(total_amount), 2) AS total_prom,
+       round(avg(tip_amount), 2)   AS propina_prom,
+       round(avg(tolls_amount), 2) AS peajes_prom,
+       round(sum(fare_amount) FILTER (WHERE trip_distance BETWEEN 0.1 AND 100)
+             / sum(trip_distance) FILTER (WHERE trip_distance BETWEEN 0.1 AND 100), 2) AS tarifa_por_milla
+FROM trips_limpios
+GROUP BY taxi_type
+
+taxi_type  tarifa_prom  total_prom  propina_prom  peajes_prom  tarifa_por_milla
+    green        17.12       25.65          2.63         0.29              4.98
+   yellow        21.51       30.40          2.85         0.54              5.99
+
+[1.541 s]
+
+----------------------------------------------------------------------
+-- [Q7] Como pagan los pasajeros (0 flex, 1 tarjeta, 2 efectivo, 3 sin cargo, 4 disputa, 5 desconocido, 6 anulado)
+SELECT taxi_type, payment_type, count(*) AS viajes,
+       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY taxi_type), 2) AS porcentaje,
+       round(avg(tip_amount), 2) AS propina_prom
+FROM trips_limpios
+GROUP BY taxi_type, payment_type
+ORDER BY taxi_type, viajes DESC
+
+taxi_type  payment_type   viajes  porcentaje  propina_prom
+    green             1   219766       65.52          3.84
+    green             2    65812       19.62          0.00
+    green          <NA>    48401       14.43          0.79
+    green             3     1062        0.32          0.02
+    green             4      400        0.12          0.00
+   yellow             1 18937255       64.12          4.28
+   yellow             0  7715673       26.12          0.40
+   yellow             2  2667598        9.03          0.00
+   yellow             4   136090        0.46          0.00
+   yellow             3    79107        0.27          0.00
+
+[1.208 s]
+
+----------------------------------------------------------------------
+-- [Q8] Porcentaje de propina sobre la tarifa, solo viajes con tarjeta
+SELECT taxi_type,
+       round(avg(100.0 * tip_amount / fare_amount), 2)                    AS propina_pct_prom,
+       round(quantile_cont(100.0 * tip_amount / fare_amount, 0.5), 2)     AS propina_pct_mediana
+FROM trips_limpios
+WHERE payment_type = 1 AND fare_amount > 0
+GROUP BY taxi_type
+
+taxi_type  propina_pct_prom  propina_pct_mediana
+    green             25.64                23.49
+   yellow             25.44                26.38
+
+[1.550 s]
+
+----------------------------------------------------------------------
+-- [Q9] Valores atipicos: percentiles altos y maximos de las variables clave
+SELECT taxi_type,
+       round(quantile_cont(trip_distance, 0.99) FILTER (WHERE trip_distance > 0), 1) AS dist_p99,
+       max(trip_distance)                           AS dist_max,
+       round(quantile_cont(duracion_min, 0.99), 1)  AS dur_p99_min,
+       round(max(duracion_min), 1)                  AS dur_max_min,
+       round(quantile_cont(total_amount, 0.99), 1)  AS total_p99,
+       max(total_amount)                            AS total_max
+FROM trips_limpios
+GROUP BY taxi_type
+
+taxi_type  dist_p99  dist_max  dur_p99_min  dur_max_min  total_p99  total_max
+    green      17.9 179830.92         82.1       1439.8       97.2     1678.2
+   yellow      19.6 328522.20         71.1       1439.9      105.8     7053.5
+
+[3.297 s]
+
+----------------------------------------------------------------------
+-- [Q10] Inconsistencias fisicas: velocidades imposibles (mas de 80 mph) o viajes de mas de 100 millas
+SELECT taxi_type,
+       count(*) FILTER (WHERE duracion_min > 0 AND trip_distance / (duracion_min / 60.0) > 80) AS velocidad_imposible,
+       count(*) FILTER (WHERE trip_distance > 100) AS mas_de_100_millas,
+       count(*) FILTER (WHERE total_amount > 500)  AS total_mayor_500
+FROM trips_limpios
+GROUP BY taxi_type
+
+taxi_type  velocidad_imposible  mas_de_100_millas  total_mayor_500
+    green                 1105                 72               21
+   yellow                 7915               1191              782
+
+[1.072 s]
+
+----------------------------------------------------------------------
+-- [Q11] Los pasajeros nulos coinciden con algun tipo de pago?
+SELECT taxi_type, payment_type, count(*) AS viajes,
+       count(*) FILTER (WHERE passenger_count IS NULL) AS pasajeros_nulos,
+       round(100.0 * count(*) FILTER (WHERE passenger_count IS NULL) / count(*), 1) AS pct_pasajeros_nulos
+FROM trips_limpios
+GROUP BY taxi_type, payment_type
+ORDER BY taxi_type, viajes DESC
+
+taxi_type  payment_type   viajes  pasajeros_nulos  pct_pasajeros_nulos
+    green             1   219766                0                  0.0
+    green             2    65812                0                  0.0
+    green          <NA>    48401            48401                100.0
+    green             3     1062                0                  0.0
+    green             4      400                0                  0.0
+   yellow             1 18937255                0                  0.0
+   yellow             0  7715673          7715673                100.0
+   yellow             2  2667598                0                  0.0
+   yellow             4   136090                0                  0.0
+   yellow             3    79107                0                  0.0
+
+[1.108 s]
