@@ -59,3 +59,29 @@ SELECT taxi_type, date_trunc('month', pickup_ts) AS mes_real, count(*) AS viajes
 FROM trips
 GROUP BY ALL
 ORDER BY taxi_type, mes_real;
+
+-- [3.6d] Que valores trae request_source y cuantos viajes tiene cada uno
+SELECT 'yellow' AS taxi_type, request_source, count(*) AS viajes FROM yellow_raw GROUP BY ALL
+UNION ALL
+SELECT 'green' AS taxi_type, request_source, count(*) AS viajes FROM green_raw GROUP BY ALL
+ORDER BY taxi_type, viajes DESC;
+
+-- [3.6e] Porcentaje de passenger_count nulo por archivo
+SELECT taxi_type,
+       regexp_extract(filename, '(\d{4}-\d{2})\.parquet$', 1) AS archivo_mes,
+       count(*) AS total,
+       count(*) FILTER (WHERE passenger_count IS NULL) AS nulos,
+       round(100.0 * count(*) FILTER (WHERE passenger_count IS NULL) / count(*), 1) AS pct_nulos
+FROM trips
+GROUP BY ALL
+ORDER BY taxi_type, archivo_mes;
+
+-- [3.6f] Viajes con distancia cero o negativa: que tarifa y duracion tienen
+SELECT taxi_type,
+       count(*) AS viajes,
+       count(*) FILTER (WHERE fare_amount > 0) AS con_tarifa_positiva,
+       round(avg(fare_amount), 2) AS tarifa_prom,
+       round(avg(date_diff('second', pickup_ts, dropoff_ts) / 60.0), 1) AS duracion_prom_min
+FROM trips
+WHERE trip_distance <= 0
+GROUP BY taxi_type;
