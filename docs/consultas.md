@@ -18,7 +18,7 @@ Salida completa de la ejecucion en `docs/salida_ej3.txt`.
 | [3.6a] | `SUMMARIZE` por columna | Ver problemas abajo. `SUMMARIZE` de yellow tardo 12 s por ser 29.7 M de filas | |
 | [3.6b] | Conteo de problemas de calidad | Ver tabla abajo | Filtros para `trips_limpios` |
 | [3.6c] | Mes real de las fechas de pickup | Hay fechas de 2001, 2008, 2009 y diciembre de 2025 dentro de los archivos de 2026 | Excluir lo que no cae en el mes del archivo |
-| [3.6d] | Valores de `request_source` | Nulo en 90.2 % de yellow y 94.3 % de green. Los valores son `HV0003` (2.3 M en yellow), `A`, `HV0005`, `EH0004`, `CC` y `EH0010` | Es un campo de origen del pedido, no se usa en los indicadores. Falta confirmar el significado de cada codigo en el diccionario de datos de la TLC |
+| [3.6d] | Valores de `request_source` | Nulo en 90.2 % de yellow y 94.3 % de green. Los valores son `HV0003` (2.3 M en yellow), `A`, `HV0005`, `EH0004`, `CC` y `EH0010` | Segun el esquema de Parquet (consulta 5.7), la columna solo existe en 3 de los 8 archivos de 2026 de cada tipo, asi que buena parte de los nulos son meses donde la columna no venia. No se usa en los indicadores. Falta confirmar el significado de cada codigo en el diccionario de datos de la TLC |
 | [3.6e] | Nulos de `passenger_count` por mes | Yellow entre 20.9 % (abril) y 30.1 % (febrero), green entre 12.8 % y 15.6 %. Pasa en todos los meses | No es un archivo danado. No se descartan esas filas, solo se excluyen al calcular promedios de pasajeros |
 | [3.6f] | Viajes con distancia cero: tarifa y duracion | _pendiente de ejecutar_ | Decidir si se descartan o se tratan aparte |
 

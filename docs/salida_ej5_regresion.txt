@@ -1,0 +1,836 @@
+﻿
+##### sql/00_vistas.sql #####
+
+----------------------------------------------------------------------
+-- 00_vistas.sql
+-- Vistas base sobre los archivos Parquet. No se importa nada a una tabla.
+-- Los comodines */* cubren cualquier anio que exista en data/raw/<tipo>/<anio>/,
+-- asi que al descargar 2024 o 2025 las vistas los incluyen sin cambiar nada.
+-- union_by_name = true alinea las columnas por nombre aunque cambie el esquema entre archivos.
+-- filename = true agrega la columna filename, util para saber de que archivo viene cada fila.
+
+CREATE OR REPLACE VIEW yellow_raw AS
+SELECT * FROM read_parquet('/workspace/data/raw/yellow/*/*.parquet',
+                           union_by_name = true, filename = true)
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.049 s]
+
+----------------------------------------------------------------------
+CREATE OR REPLACE VIEW green_raw AS
+SELECT * FROM read_parquet('/workspace/data/raw/green/*/*.parquet',
+                           union_by_name = true, filename = true)
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.035 s]
+
+----------------------------------------------------------------------
+-- Vista unificada con las columnas que comparten ambos tipos de taxi.
+-- Yellow usa tpep_* y green usa lpep_* para las fechas.
+CREATE OR REPLACE VIEW trips AS
+SELECT 'yellow' AS taxi_type, filename,
+       tpep_pickup_datetime  AS pickup_ts,
+       tpep_dropoff_datetime AS dropoff_ts,
+       passenger_count, trip_distance, PULocationID, DOLocationID,
+       payment_type, fare_amount, tip_amount, tolls_amount, total_amount
+FROM yellow_raw
+UNION ALL
+SELECT 'green' AS taxi_type, filename,
+       lpep_pickup_datetime  AS pickup_ts,
+       lpep_dropoff_datetime AS dropoff_ts,
+       passenger_count, trip_distance, PULocationID, DOLocationID,
+       payment_type, fare_amount, tip_amount, tolls_amount, total_amount
+FROM green_raw
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.045 s]
+
+##### sql/03_exploracion.sql #####
+
+----------------------------------------------------------------------
+-- 03_exploracion.sql  (Ejercicio 3)
+-- Requiere sql/00_vistas.sql. Todas las consultas leen directo de los Parquet.
+
+-- [3.1] Cantidad de archivos, por tipo de taxi y anio
+SELECT regexp_extract(file, '/raw/(yellow|green)/(\d{4})/', 1) AS taxi,
+       regexp_extract(file, '/raw/(yellow|green)/(\d{4})/', 2) AS anio,
+       count(*) AS archivos
+FROM glob('/workspace/data/raw/*/*/*.parquet')
+GROUP BY ALL
+ORDER BY taxi, anio
+
+  taxi anio  archivos
+ green 2024        12
+ green 2026         8
+yellow 2024        12
+yellow 2026         8
+
+[0.028 s]
+
+----------------------------------------------------------------------
+-- [3.2a] Cantidad de registros leyendo solo los metadatos del Parquet (no escanea datos)
+SELECT regexp_extract(file_name, '/raw/(yellow|green)/', 1) AS taxi,
+       sum(num_rows) AS registros
+FROM parquet_file_metadata('/workspace/data/raw/*/*/*.parquet')
+GROUP BY ALL
+ORDER BY taxi
+
+  taxi  registros
+ green   997332.0
+yellow 70873075.0
+
+[0.050 s]
+
+----------------------------------------------------------------------
+-- [3.2b] Cantidad de registros por tipo y mes, contando filas
+SELECT taxi_type,
+       regexp_extract(filename, '(\d{4}-\d{2})\.parquet$', 1) AS archivo_mes,
+       count(*) AS registros
+FROM trips
+GROUP BY ALL
+ORDER BY taxi_type, archivo_mes
+
+taxi_type archivo_mes  registros
+    green     2024-01      56551
+    green     2024-02      53577
+    green     2024-03      57457
+    green     2024-04      56471
+    green     2024-05      61003
+    green     2024-06      54748
+    green     2024-07      51837
+    green     2024-08      51771
+    green     2024-09      54440
+    green     2024-10      56147
+    green     2024-11      52222
+    green     2024-12      53994
+    green     2026-01      40272
+    green     2026-02      37373
+    green     2026-03      44208
+    green     2026-04      44238
+    green     2026-05      44921
+    green     2026-06      44163
+    green     2026-07      41252
+    green     2026-08      40687
+   yellow     2024-01    2964624
+   yellow     2024-02    3007526
+   yellow     2024-03    3582628
+   yellow     2024-04    3514289
+   yellow     2024-05    3723833
+   yellow     2024-06    3539193
+   yellow     2024-07    3076903
+   yellow     2024-08    2979183
+   yellow     2024-09    3633030
+   yellow     2024-10    3833771
+   yellow     2024-11    3646369
+   yellow     2024-12    3668371
+   yellow     2026-01    3724889
+   yellow     2026-02    3399866
+   yellow     2026-03    3952451
+   yellow     2026-04    3831240
+   yellow     2026-05    4090836
+   yellow     2026-06    3837248
+   yellow     2026-07    3530109
+   yellow     2026-08    3336716
+
+[0.123 s]
+
+----------------------------------------------------------------------
+-- [3.3 y 3.4] Columnas y tipos de datos
+DESCRIBE SELECT * FROM yellow_raw
+
+          column_name column_type null  key default extra
+             VendorID     INTEGER  YES None    None  None
+ tpep_pickup_datetime   TIMESTAMP  YES None    None  None
+tpep_dropoff_datetime   TIMESTAMP  YES None    None  None
+      passenger_count      BIGINT  YES None    None  None
+        trip_distance      DOUBLE  YES None    None  None
+           RatecodeID      BIGINT  YES None    None  None
+   store_and_fwd_flag     VARCHAR  YES None    None  None
+         PULocationID     INTEGER  YES None    None  None
+         DOLocationID     INTEGER  YES None    None  None
+         payment_type      BIGINT  YES None    None  None
+          fare_amount      DOUBLE  YES None    None  None
+                extra      DOUBLE  YES None    None  None
+              mta_tax      DOUBLE  YES None    None  None
+           tip_amount      DOUBLE  YES None    None  None
+         tolls_amount      DOUBLE  YES None    None  None
+improvement_surcharge      DOUBLE  YES None    None  None
+         total_amount      DOUBLE  YES None    None  None
+ congestion_surcharge      DOUBLE  YES None    None  None
+          Airport_fee      DOUBLE  YES None    None  None
+   cbd_congestion_fee      DOUBLE  YES None    None  None
+       request_source     VARCHAR  YES None    None  None
+             filename     VARCHAR  YES None    None  None
+
+[0.042 s]
+
+----------------------------------------------------------------------
+DESCRIBE SELECT * FROM green_raw
+
+          column_name column_type null  key default extra
+             VendorID     INTEGER  YES None    None  None
+ lpep_pickup_datetime   TIMESTAMP  YES None    None  None
+lpep_dropoff_datetime   TIMESTAMP  YES None    None  None
+   store_and_fwd_flag     VARCHAR  YES None    None  None
+           RatecodeID      BIGINT  YES None    None  None
+         PULocationID     INTEGER  YES None    None  None
+         DOLocationID     INTEGER  YES None    None  None
+      passenger_count      BIGINT  YES None    None  None
+        trip_distance      DOUBLE  YES None    None  None
+          fare_amount      DOUBLE  YES None    None  None
+                extra      DOUBLE  YES None    None  None
+              mta_tax      DOUBLE  YES None    None  None
+           tip_amount      DOUBLE  YES None    None  None
+         tolls_amount      DOUBLE  YES None    None  None
+            ehail_fee      DOUBLE  YES None    None  None
+improvement_surcharge      DOUBLE  YES None    None  None
+         total_amount      DOUBLE  YES None    None  None
+         payment_type      BIGINT  YES None    None  None
+            trip_type      BIGINT  YES None    None  None
+ congestion_surcharge      DOUBLE  YES None    None  None
+   cbd_congestion_fee      DOUBLE  YES None    None  None
+       request_source     VARCHAR  YES None    None  None
+             filename     VARCHAR  YES None    None  None
+
+[0.037 s]
+
+----------------------------------------------------------------------
+-- [3.5] Muestra de registros
+SELECT * FROM yellow_raw USING SAMPLE 10 ROWS
+
+ VendorID tpep_pickup_datetime tpep_dropoff_datetime  passenger_count  trip_distance  RatecodeID store_and_fwd_flag  PULocationID  DOLocationID  payment_type  fare_amount  extra  mta_tax  tip_amount  tolls_amount  improvement_surcharge  total_amount  congestion_surcharge  Airport_fee  cbd_congestion_fee request_source                                                        filename
+        2  2024-01-01 00:40:53   2024-01-01 00:55:48                1           2.56           1                  N           166           244             2         14.2    1.0      0.5        0.00          0.00                    1.0         16.70                   0.0         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-01.parquet
+        2  2024-01-01 00:43:49   2024-01-01 01:15:24                4          18.02           1                  N           132            49             1         69.5    1.0      0.5       14.40          0.00                    1.0         88.15                   0.0         1.75                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-01.parquet
+        2  2024-01-01 00:57:58   2024-01-01 01:06:21                2           1.31           1                  N           237           237             1         10.0    1.0      0.5        2.70          0.00                    1.0         17.70                   2.5         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-01.parquet
+        1  2024-01-24 16:02:15   2024-01-24 16:11:06                1           0.80           1                  N           141           263             1          9.3    2.5      0.5        2.65          0.00                    1.0         15.95                   2.5         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-01.parquet
+        2  2024-01-24 17:07:04   2024-01-24 17:16:33                1           1.31           1                  N           236           237             2         10.7    2.5      0.5        0.00          0.00                    1.0         17.20                   2.5         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-01.parquet
+        2  2024-02-11 15:09:04   2024-02-11 15:33:58                2           9.97           1                  N           138            33             2         40.1    5.0      0.5        0.00          0.00                    1.0         48.35                   0.0         1.75                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-02.parquet
+        2  2024-02-11 16:24:18   2024-02-11 16:57:24                1          10.19           1                  N            48           138             2         46.4    5.0      0.5        0.00          6.94                    1.0         62.34                   2.5         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-02.parquet
+        2  2024-02-11 18:45:49   2024-02-11 19:15:49                1           5.61           1                  N           164             7             2         30.3    0.0      0.5        0.00          0.00                    1.0         34.30                   2.5         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-02.parquet
+        1  2024-02-11 19:17:15   2024-02-11 19:23:50                1           0.90           1                  N           234           164             1          8.6    2.5      0.5        2.50          0.00                    1.0         15.10                   2.5         0.00                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-02.parquet
+        2  2024-02-11 19:00:26   2024-02-11 19:17:47                1           8.99           1                  N           138           141             1         35.9    5.0      0.5        9.65          6.94                    1.0         63.24                   2.5         1.75                 NaN           None /workspace/data/raw/yellow/2024/yellow_tripdata_2024-02.parquet
+
+[0.225 s]
+
+----------------------------------------------------------------------
+SELECT * FROM green_raw USING SAMPLE 10 ROWS
+
+ VendorID lpep_pickup_datetime lpep_dropoff_datetime store_and_fwd_flag  RatecodeID  PULocationID  DOLocationID  passenger_count  trip_distance  fare_amount  extra  mta_tax  tip_amount  tolls_amount  ehail_fee  improvement_surcharge  total_amount  payment_type  trip_type  congestion_surcharge  cbd_congestion_fee request_source                                                      filename
+        2  2024-01-02 11:46:22   2024-01-02 11:53:22                  N           1           166           166                1           1.09          8.6    0.0      0.5        2.52           0.0        NaN                    1.0         12.62             1          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-08 12:50:41   2024-01-08 13:05:23                  N           1            43           161                1           2.34         15.6    0.0      0.5        2.50           0.0        NaN                    1.0         22.35             1          1                  2.75                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-12 16:01:00   2024-01-12 16:08:52                  N           1            97           181                2           1.19          9.3    2.5      0.5        2.66           0.0        NaN                    1.0         15.96             1          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-15 16:43:51   2024-01-15 16:57:02                  N           1            74           238                1           2.99         16.3    0.0      0.5        6.16           0.0        NaN                    1.0         26.71             1          1                  2.75                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-17 13:27:27   2024-01-17 13:28:13                  N           1             7             7                1           0.00          3.0    0.0      0.5        0.00           0.0        NaN                    1.0          4.50             3          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-19 14:54:42   2024-01-19 15:03:47                  N           1            74           263                1           1.75         10.7    0.0      0.5        0.00           0.0        NaN                    1.0         12.20             2          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-21 14:51:02   2024-01-21 15:03:08                  N           1            74           236                1           1.80         12.8    0.0      0.5        2.05           0.0        NaN                    1.0         19.10             1          1                  2.75                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        1  2024-01-22 10:18:34   2024-01-22 10:27:47                  N           1            74           166                1           1.50          9.3    0.0      1.5       10.00           0.0        NaN                    1.0         20.80             1          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-23 14:41:04   2024-01-23 14:48:55                  N           1            95            95                1           0.92          9.3    0.0      0.5        0.00           0.0        NaN                    1.0         10.80             2          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+        2  2024-01-24 11:28:55   2024-01-24 11:32:17                  N           1            75            74                2           0.99          6.5    0.0      0.5        1.60           0.0        NaN                    1.0          9.60             1          1                  0.00                 NaN           None /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet
+
+[0.083 s]
+
+----------------------------------------------------------------------
+-- [3.6a] Resumen estadistico por columna (min, max, nulos, cuantiles)
+SUMMARIZE SELECT * FROM yellow_raw
+
+          column_name column_type                                                             min                                                             max  approx_unique                        avg                 std                        q25                        q50                        q75    count  null_percentage
+             VendorID     INTEGER                                                               1                                                               7              4         1.8151568420024107  0.5687845418931967                          2                          2                          2 70873075             0.00
+ tpep_pickup_datetime   TIMESTAMP                                             2001-01-01 09:23:58                                             2026-08-31 23:59:59       41962329 2025-04-10 09:08:07.177432                 NaN 2024-06-07 11:23:50.949186 2024-11-13 18:04:39.375329 2026-04-10 01:25:23.629122 70873075             0.00
+tpep_dropoff_datetime   TIMESTAMP                                             2001-01-01 16:09:38                                             2026-09-01 20:16:00       44326272 2025-04-10 09:25:39.691221                 NaN 2024-06-07 18:05:48.586136 2024-11-16 13:54:21.691251 2026-04-09 10:24:57.985858 70873075             0.00
+      passenger_count      BIGINT                                                               0                                                               9             11         1.3024764431753375  0.7603765421670436                          1                          1                          1 70873075            16.66
+        trip_distance      DOUBLE                                                             0.0                                                       398608.62           9128          5.217857819490425   478.7212052238809          1.018541137860712          1.795170701193531          3.547376347926277 70873075             0.00
+           RatecodeID      BIGINT                                                               1                                                              99              7          3.143068311595898   14.02583507992959                          1                          1                          1 70873075            16.66
+   store_and_fwd_flag     VARCHAR                                                               N                                                               Y              2                        NaN                 NaN                        NaN                        NaN                        NaN 70873075            16.66
+         PULocationID     INTEGER                                                               1                                                             265            298         163.12592827388963     65.373013203609                        128                        161                        233 70873075             0.00
+         DOLocationID     INTEGER                                                               1                                                             265            298         162.44324911823003    70.0839224016551                        112                        162                        234 70873075             0.00
+         payment_type      BIGINT                                                               0                                                               5              6         1.0045423597043024  0.6605099300579749                          1                          1                          1 70873075             0.00
+          fare_amount      DOUBLE                                                         -2555.2                                                       335544.44          24784          20.10404811107641  59.755361436114946          9.344645570321392         14.489264956710018         24.176297551246247 70873075             0.00
+                extra      DOUBLE                                                           -9.25                                                          244.35            464         1.2714311202103155  1.7939209318549418                        0.0       0.006840024318282092                        2.5 70873075             0.00
+              mta_tax      DOUBLE                                                            -0.5                                                            41.3             38         0.4833289049473304 0.11576779498489954                        0.5                        0.5                        0.5 70873075             0.00
+           tip_amount      DOUBLE                                                          -300.0                                                          999.99           7653          3.108067107852571   4.045884042502789                        0.0          2.436414535619706          4.107769205310255 70873075             0.00
+         tolls_amount      DOUBLE                                                         -140.63                                                         1702.88           4565         0.5508590940894149  2.2349268150064794                        0.0                        0.0                        0.0 70873075             0.00
+improvement_surcharge      DOUBLE                                                            -1.0                                                             4.0             10         0.9642495432855045 0.23644926315353784                        1.0                        1.0                        1.0 70873075             0.00
+         total_amount      DOUBLE                                                         -2560.2                                                       335550.94          50956          28.77030904922951   61.29609702372509         16.376586166541692           22.0443852631896          32.39380202575026 70873075             0.00
+ congestion_surcharge      DOUBLE                                                            -2.5                                                            2.75             11          2.226476273024256  0.8606608247041283                        2.5                        2.5                        2.5 70873075            16.66
+          Airport_fee      DOUBLE                                                            -2.0                                                            27.0             16        0.15447461790289047  0.5317496060548323                        0.0                        0.0                        0.0 70873075            16.66
+   cbd_congestion_fee      DOUBLE                                                           -0.75                                                            0.75              3         0.5355387211309968 0.34470526991555545                        0.0                       0.75                       0.75 70873075            58.09
+       request_source     VARCHAR                                                               A                                                          HV0005              3                        NaN                 NaN                        NaN                        NaN                        NaN 70873075            95.90
+             filename     VARCHAR /workspace/data/raw/yellow/2024/yellow_tripdata_2024-01.parquet /workspace/data/raw/yellow/2026/yellow_tripdata_2026-08.parquet             21                        NaN                 NaN                        NaN                        NaN                        NaN 70873075             0.00
+
+[25.481 s]
+
+----------------------------------------------------------------------
+SUMMARIZE SELECT * FROM green_raw
+
+          column_name column_type                                                           min                                                           max  approx_unique                        avg                 std                        q25                        q50                        q75  count  null_percentage
+             VendorID     INTEGER                                                             1                                                             6              3          2.030322901501205  0.8170451025850335                          2                          2                          2 997332             0.00
+ lpep_pickup_datetime   TIMESTAMP                                           2008-12-31 00:00:00                                           2026-08-31 23:58:28        1035093  2025-02-11 15:07:53.76982                 NaN 2024-05-14 01:32:57.942678  2024-10-02 11:17:16.43628 2026-03-04 10:44:14.381786 997332             0.00
+lpep_dropoff_datetime   TIMESTAMP                                           2008-12-31 00:00:00                                           2026-09-02 09:39:37        1290902 2025-02-11 15:27:55.083787                 NaN 2024-05-13 12:43:44.781354 2024-10-02 01:08:16.160783 2026-03-08 01:35:43.402192 997332             0.00
+   store_and_fwd_flag     VARCHAR                                                             N                                                             Y              2                        NaN                 NaN                        NaN                        NaN                        NaN 997332             7.33
+           RatecodeID      BIGINT                                                             1                                                            99              7         1.2272694321428996  1.2960121666703395                          1                          1                          1 997332             7.33
+         PULocationID     INTEGER                                                             1                                                           265            266          96.70922822089334  57.022355121341036                         74                         75                        103 997332             0.00
+         DOLocationID     INTEGER                                                             1                                                           265            266         141.82127415945743    76.8410728616203                         74                        140                        227 997332             0.00
+      passenger_count      BIGINT                                                             0                                                             9             11         1.3118859070641584  0.9705271926655922                          1                          1                          1 997332             7.33
+        trip_distance      DOUBLE                                                           0.0                                                     233972.43           3072         15.779716874621537   969.0617511794604         1.1754921018181752         1.9292072142710035         3.4162084557210357 997332             0.00
+          fare_amount      DOUBLE                                                        -500.0                                                        1676.7           6569          17.90260364652892   17.54008860372053          9.301099770866776         13.560075852270009         20.420811627043133 997332             0.00
+                extra      DOUBLE                                                          -7.5                                                          12.0             27         0.8929476743952866  1.3892603289634484                        0.0                        0.0         1.0004962950796223 997332             0.00
+              mta_tax      DOUBLE                                                          -0.5                                                           5.0              9         0.5659712613252157  0.3472997898440145                        0.5                        0.5                        0.5 997332             0.00
+           tip_amount      DOUBLE                                                         -65.0                                                         495.0           2509          2.589986233270422   4.201919907865385                        0.0         2.0237822605923363         3.8351178458510238 997332             0.00
+         tolls_amount      DOUBLE                                                         -24.5                                                          85.0            147         0.2531391251859904  1.4145422564587808                        0.0                        0.0                        0.0 997332             0.00
+            ehail_fee      DOUBLE                                                           NaN                                                           NaN              0                        NaN                 NaN                        NaN                        NaN                        NaN 997332           100.00
+improvement_surcharge      DOUBLE                                                          -1.0                                                           1.0              5         0.9582444963162683 0.19404178257934301                        1.0                        1.0                        1.0 997332             0.00
+         total_amount      DOUBLE                                                        -501.5                                                        1678.2          11049          24.67977087870427   19.85554688362601         14.181804011599766         19.718258014887343          28.77124169803263 997332             0.00
+         payment_type      BIGINT                                                             1                                                             5              5         1.2819203898600888 0.48106949258502724                          1                          1                          2 997332             7.33
+            trip_type      BIGINT                                                             1                                                             2              2         1.0475466512289737 0.21280511316468514                          1                          1                          1 997332             7.34
+ congestion_surcharge      DOUBLE                                                         -2.75                                                          2.75              6         0.8348482897636841  1.2637901318318403                        0.0                        0.0                       2.75 997332             7.33
+   cbd_congestion_fee      DOUBLE                                                         -0.75                                                          0.75              3        0.06234018759232782 0.20713685724463016                        0.0                        0.0                        0.0 997332            66.20
+       request_source     VARCHAR                                                             A                                                        HV0005              2                        NaN                 NaN                        NaN                        NaN                        NaN 997332            98.07
+             filename     VARCHAR /workspace/data/raw/green/2024/green_tripdata_2024-01.parquet /workspace/data/raw/green/2026/green_tripdata_2026-08.parquet             22                        NaN                 NaN                        NaN                        NaN                        NaN 997332             0.00
+
+[0.756 s]
+
+----------------------------------------------------------------------
+-- [3.6b] Conteo de problemas de calidad por tipo de taxi
+SELECT taxi_type,
+       count(*)                                                        AS total,
+       count(*) FILTER (WHERE passenger_count IS NULL)                 AS pasajeros_nulos,
+       count(*) FILTER (WHERE passenger_count = 0)                     AS pasajeros_cero,
+       count(*) FILTER (WHERE trip_distance <= 0)                      AS distancia_no_positiva,
+       count(*) FILTER (WHERE fare_amount < 0)                         AS tarifa_negativa,
+       count(*) FILTER (WHERE total_amount <= 0)                       AS total_no_positivo,
+       count(*) FILTER (WHERE dropoff_ts < pickup_ts)                  AS dropoff_antes_de_pickup,
+       count(*) FILTER (WHERE date_diff('hour', pickup_ts, dropoff_ts) > 24) AS duracion_mayor_24h,
+       count(*) FILTER (WHERE strftime(pickup_ts, '%Y-%m')
+                              <> regexp_extract(filename, '(\d{4}-\d{2})\.parquet$', 1)) AS fuera_del_mes_del_archivo
+FROM trips
+GROUP BY taxi_type
+
+taxi_type    total  pasajeros_nulos  pasajeros_cero  distancia_no_positiva  tarifa_negativa  total_no_positivo  dropoff_antes_de_pickup  duracion_mayor_24h  fuera_del_mes_del_archivo
+    green   997332            73103           11320                  46786             3143               4140                        7                   4                        262
+   yellow 70873075         11807920          492713                1728536           888388             781499                     1585                 472                        566
+
+[2.561 s]
+
+----------------------------------------------------------------------
+-- [3.6c] Fechas fuera del rango esperado: de que meses reales vienen los viajes
+SELECT taxi_type, date_trunc('month', pickup_ts) AS mes_real, count(*) AS viajes
+FROM trips
+GROUP BY ALL
+ORDER BY taxi_type, mes_real
+
+taxi_type   mes_real  viajes
+    green 2008-12-01       9
+    green 2009-01-01       8
+    green 2023-12-01       2
+    green 2024-01-01   56555
+    green 2024-02-01   53578
+    green 2024-03-01   57451
+    green 2024-04-01   56473
+    green 2024-05-01   61007
+    green 2024-06-01   54738
+    green 2024-07-01   51820
+    green 2024-08-01   51806
+    green 2024-09-01   54422
+    green 2024-10-01   56153
+    green 2024-11-01   52214
+    green 2024-12-01   53981
+    green 2025-01-01      11
+    green 2025-12-01       4
+    green 2026-01-01   40258
+    green 2026-02-01   37388
+    green 2026-03-01   44203
+    green 2026-04-01   44243
+    green 2026-05-01   44925
+    green 2026-06-01   44156
+    green 2026-07-01   41249
+    green 2026-08-01   40678
+   yellow 2001-01-01       1
+   yellow 2002-12-01      11
+   yellow 2008-12-01      14
+   yellow 2009-01-01      24
+   yellow 2023-12-01      10
+   yellow 2024-01-01 2964617
+   yellow 2024-02-01 3007533
+   yellow 2024-03-01 3582611
+   yellow 2024-04-01 3514295
+   yellow 2024-05-01 3723843
+   yellow 2024-06-01 3539170
+   yellow 2024-07-01 3076876
+   yellow 2024-08-01 2979192
+   yellow 2024-09-01 3633025
+   yellow 2024-10-01 3833780
+   yellow 2024-11-01 3646372
+   yellow 2024-12-01 3668350
+   yellow 2025-01-01       2
+   yellow 2025-02-01       1
+   yellow 2025-03-01       2
+   yellow 2025-12-01       6
+   yellow 2026-01-01 3724894
+   yellow 2026-02-01 3399866
+   yellow 2026-03-01 3952443
+   yellow 2026-04-01 3831256
+   yellow 2026-05-01 4090824
+   yellow 2026-06-01 3837241
+   yellow 2026-07-01 3530077
+   yellow 2026-08-01 3336739
+
+[0.996 s]
+
+----------------------------------------------------------------------
+-- [3.6d] Que valores trae request_source y cuantos viajes tiene cada uno
+SELECT 'yellow' AS taxi_type, request_source, count(*) AS viajes FROM yellow_raw GROUP BY ALL
+UNION ALL
+SELECT 'green' AS taxi_type, request_source, count(*) AS viajes FROM green_raw GROUP BY ALL
+ORDER BY taxi_type, viajes DESC
+
+taxi_type request_source   viajes
+    green            NaN   978121
+    green              A    18029
+    green         HV0005     1179
+    green             CC        3
+   yellow            NaN 67969629
+   yellow         HV0003  2295520
+   yellow              A   403773
+   yellow         HV0005   181233
+   yellow         EH0004    20769
+   yellow             CC     1879
+   yellow         EH0010      272
+
+[0.169 s]
+
+----------------------------------------------------------------------
+-- [3.6e] Porcentaje de passenger_count nulo por archivo
+SELECT taxi_type,
+       regexp_extract(filename, '(\d{4}-\d{2})\.parquet$', 1) AS archivo_mes,
+       count(*) AS total,
+       count(*) FILTER (WHERE passenger_count IS NULL) AS nulos,
+       round(100.0 * count(*) FILTER (WHERE passenger_count IS NULL) / count(*), 1) AS pct_nulos
+FROM trips
+GROUP BY ALL
+ORDER BY taxi_type, archivo_mes
+
+taxi_type archivo_mes   total   nulos  pct_nulos
+    green     2024-01   56551    3415        6.0
+    green     2024-02   53577    2928        5.5
+    green     2024-03   57457    2097        3.6
+    green     2024-04   56471    1988        3.5
+    green     2024-05   61003    1892        3.1
+    green     2024-06   54748    1899        3.5
+    green     2024-07   51837    1609        3.1
+    green     2024-08   51771    1584        3.1
+    green     2024-09   54440    1704        3.1
+    green     2024-10   56147    1645        2.9
+    green     2024-11   52222    1586        3.0
+    green     2024-12   53994    1981        3.7
+    green     2026-01   40272    5414       13.4
+    green     2026-02   37373    5387       14.4
+    green     2026-03   44208    6692       15.1
+    green     2026-04   44238    6290       14.2
+    green     2026-05   44921    5772       12.8
+    green     2026-06   44163    6472       14.7
+    green     2026-07   41252    6435       15.6
+    green     2026-08   40687    6313       15.5
+   yellow     2024-01 2964624  140162        4.7
+   yellow     2024-02 3007526  185610        6.2
+   yellow     2024-03 3582628  426190       11.9
+   yellow     2024-04 3514289  408576       11.6
+   yellow     2024-05 3723833  404666       10.9
+   yellow     2024-06 3539193  410781       11.6
+   yellow     2024-07 3076903  278989        9.1
+   yellow     2024-08 2979183  258667        8.7
+   yellow     2024-09 3633030  483731       13.3
+   yellow     2024-10 3833771  393895       10.3
+   yellow     2024-11 3646369  373674       10.2
+   yellow     2024-12 3668371  326291        8.9
+   yellow     2026-01 3724889 1088058       29.2
+   yellow     2026-02 3399866 1023317       30.1
+   yellow     2026-03 3952451  945748       23.9
+   yellow     2026-04 3831240  799786       20.9
+   yellow     2026-05 4090836  955371       23.4
+   yellow     2026-06 3837248 1013500       26.4
+   yellow     2026-07 3530109  969727       27.5
+   yellow     2026-08 3336716  921181       27.6
+
+[0.232 s]
+
+----------------------------------------------------------------------
+-- [3.6f] Viajes con distancia cero o negativa: que tarifa y duracion tienen
+SELECT taxi_type,
+       count(*) AS viajes,
+       count(*) FILTER (WHERE fare_amount > 0) AS con_tarifa_positiva,
+       round(avg(fare_amount), 2) AS tarifa_prom,
+       round(avg(date_diff('second', pickup_ts, dropoff_ts) / 60.0), 1) AS duracion_prom_min
+FROM trips
+WHERE trip_distance <= 0
+GROUP BY taxi_type
+
+taxi_type  viajes  con_tarifa_positiva  tarifa_prom  duracion_prom_min
+   yellow 1728536              1647267        26.77               12.9
+    green   46786                45179        22.30               13.9
+
+[1.664 s]
+
+##### sql/04_eda.sql #####
+
+----------------------------------------------------------------------
+-- 04_eda.sql  (Ejercicio 4)
+-- Requiere sql/00_vistas.sql.
+-- trips_limpios descarta lo que 3.6 mostro como invalido: fechas fuera del mes del archivo,
+-- bajada antes de la subida, duracion de mas de 24 horas, tarifa negativa y total no positivo.
+-- No filtra por distancia: segun 3.6f los viajes con distancia 0 si tienen tarifa y duracion
+-- normales (97.9 % en yellow), asi que cuentan para volumen, horarios y pagos.
+-- trips_con_distancia es la version para analisis que usan la distancia.
+
+CREATE OR REPLACE VIEW trips_limpios AS
+SELECT *,
+       date_diff('second', pickup_ts, dropoff_ts) / 60.0 AS duracion_min
+FROM trips
+WHERE strftime(pickup_ts, '%Y-%m') = regexp_extract(filename, '(\d{4}-\d{2})\.parquet$', 1)
+  AND dropoff_ts >= pickup_ts
+  AND dropoff_ts - pickup_ts <= INTERVAL 24 HOUR
+  AND fare_amount >= 0
+  AND total_amount > 0
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.086 s]
+
+----------------------------------------------------------------------
+-- Q4 mostro promedios de distancia inflados por valores absurdos (hasta 328 mil millas),
+-- por eso esta vista tambien corta en 100 millas. Q9 y Q10 siguen sobre trips_limpios
+-- para poder reportar esos atipicos.
+CREATE OR REPLACE VIEW trips_con_distancia AS
+SELECT * FROM trips_limpios WHERE trip_distance > 0 AND trip_distance <= 100
+
+Empty DataFrame
+Columns: [Count]
+Index: []
+
+[0.071 s]
+
+----------------------------------------------------------------------
+-- [Q1] Como evoluciona el volumen de viajes mes a mes (total y por dia, para no castigar a febrero)
+SELECT taxi_type, date_trunc('month', pickup_ts)::DATE AS mes,
+       count(*) AS viajes,
+       count(DISTINCT pickup_ts::DATE) AS dias,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
+FROM trips_limpios
+GROUP BY ALL
+ORDER BY taxi_type, mes
+
+taxi_type        mes  viajes  dias  viajes_por_dia
+    green 2024-01-01   56322    31          1817.0
+    green 2024-02-01   53378    29          1841.0
+    green 2024-03-01   57227    31          1846.0
+    green 2024-04-01   56210    30          1874.0
+    green 2024-05-01   60725    31          1959.0
+    green 2024-06-01   54526    30          1818.0
+    green 2024-07-01   51604    31          1665.0
+    green 2024-08-01   51522    31          1662.0
+    green 2024-09-01   54183    30          1806.0
+    green 2024-10-01   55951    31          1805.0
+    green 2024-11-01   52047    30          1735.0
+    green 2024-12-01   53774    31          1735.0
+    green 2026-01-01   40074    31          1293.0
+    green 2026-02-01   37185    28          1328.0
+    green 2026-03-01   44043    31          1421.0
+    green 2026-04-01   44018    30          1467.0
+    green 2026-05-01   44664    31          1441.0
+    green 2026-06-01   43962    30          1465.0
+    green 2026-07-01   41031    31          1324.0
+    green 2026-08-01   40464    31          1305.0
+   yellow 2024-01-01 2926552    31         94405.0
+   yellow 2024-02-01 2966321    29        102287.0
+   yellow 2024-03-01 3523425    31        113659.0
+   yellow 2024-04-01 3456034    30        115201.0
+   yellow 2024-05-01 3663226    31        118169.0
+   yellow 2024-06-01 3476884    30        115896.0
+   yellow 2024-07-01 3017677    31         97344.0
+   yellow 2024-08-01 2920252    31         94202.0
+   yellow 2024-09-01 3559064    30        118635.0
+   yellow 2024-10-01 3757560    31        121212.0
+   yellow 2024-11-01 3572993    30        119100.0
+   yellow 2024-12-01 3588601    31        115761.0
+   yellow 2026-01-01 3684414    31        118852.0
+   yellow 2026-02-01 3372029    28        120430.0
+   yellow 2026-03-01 3930502    31        126790.0
+   yellow 2026-04-01 3815791    30        127193.0
+   yellow 2026-05-01 4075234    31        131459.0
+   yellow 2026-06-01 3822253    30        127408.0
+   yellow 2026-07-01 3514687    31        113377.0
+   yellow 2026-08-01 3320813    31        107123.0
+
+[2.569 s]
+
+----------------------------------------------------------------------
+-- [Q2] En que horas del dia se concentra la demanda
+SELECT taxi_type, hour(pickup_ts) AS hora, count(*) AS viajes
+FROM trips_limpios
+GROUP BY ALL
+ORDER BY taxi_type, hora
+
+taxi_type  hora  viajes
+    green     0   17375
+    green     1   11773
+    green     2    8474
+    green     3    6605
+    green     4    6050
+    green     5    6610
+    green     6   16980
+    green     7   37585
+    green     8   48384
+    green     9   52742
+    green    10   52105
+    green    11   52240
+    green    12   55324
+    green    13   55280
+    green    14   63175
+    green    15   68683
+    green    16   74445
+    green    17   79523
+    green    18   75762
+    green    19   59052
+    green    20   45383
+    green    21   39893
+    green    22   33594
+    green    23   25873
+   yellow     0 2092981
+   yellow     1 1373666
+   yellow     2  904208
+   yellow     3  619116
+   yellow     4  479677
+   yellow     5  525469
+   yellow     6 1076662
+   yellow     7 1993570
+   yellow     8 2720451
+   yellow     9 2921232
+   yellow    10 3055999
+   yellow    11 3310377
+   yellow    12 3604069
+   yellow    13 3757176
+   yellow    14 4048300
+   yellow    15 4182990
+   yellow    16 4278824
+   yellow    17 4750633
+   yellow    18 4982454
+   yellow    19 4379631
+   yellow    20 4002536
+   yellow    21 4110325
+   yellow    22 3808541
+   yellow    23 2985425
+
+[2.499 s]
+
+----------------------------------------------------------------------
+-- [Q3] Demanda por dia de la semana, dividida entre cuantas veces ocurre ese dia en el periodo (isodow: 1 = lunes)
+SELECT taxi_type, isodow(pickup_ts) AS dia_semana,
+       count(*) AS viajes,
+       count(DISTINCT pickup_ts::DATE) AS dias,
+       round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia,
+       round(median(trip_distance) FILTER (WHERE trip_distance > 0 AND trip_distance <= 100), 2) AS distancia_mediana
+FROM trips_limpios
+GROUP BY taxi_type, isodow(pickup_ts)
+ORDER BY taxi_type, dia_semana
+
+taxi_type  dia_semana   viajes  dias  viajes_por_dia  distancia_mediana
+    green           1   141248    88          1605.0               2.00
+    green           2   149151    87          1714.0               1.95
+    green           3   153798    86          1788.0               1.95
+    green           4   160086    87          1840.0               1.96
+    green           5   149956    87          1724.0               1.97
+    green           6   124734    87          1434.0               2.16
+    green           7   113937    87          1310.0               2.29
+   yellow           1  8552816    88         97191.0               1.87
+   yellow           2  9844490    87        113155.0               1.78
+   yellow           3 10333108    86        120152.0               1.77
+   yellow           4 11036619    87        126858.0               1.80
+   yellow           5 10474838    87        120400.0               1.80
+   yellow           6 10717551    87        123190.0               1.90
+   yellow           7  9004890    87        103504.0               2.08
+
+[3.490 s]
+
+----------------------------------------------------------------------
+-- [Q4] Como son los viajes tipicos: distancia, duracion y pasajeros
+SELECT taxi_type,
+       round(avg(trip_distance), 2)                  AS distancia_prom,
+       round(median(trip_distance), 2)               AS distancia_mediana,
+       round(quantile_cont(trip_distance, 0.95), 2)  AS distancia_p95,
+       round(avg(duracion_min), 1)                   AS duracion_prom_min,
+       round(median(duracion_min), 1)                AS duracion_mediana_min,
+       round(avg(passenger_count), 2)                AS pasajeros_prom
+FROM trips_con_distancia
+GROUP BY taxi_type
+
+taxi_type  distancia_prom  distancia_mediana  distancia_p95  duracion_prom_min  duracion_mediana_min  pasajeros_prom
+    green            3.09               2.02           9.39               20.3                  12.4            1.32
+   yellow            3.46               1.84          13.50               17.7                  13.5            1.30
+
+[8.224 s]
+
+----------------------------------------------------------------------
+-- [Q5] Distribucion de la distancia por rangos
+WITH rangos AS (
+    SELECT taxi_type,
+           CASE WHEN trip_distance < 1  THEN '0-1'
+                WHEN trip_distance < 3  THEN '1-3'
+                WHEN trip_distance < 5  THEN '3-5'
+                WHEN trip_distance < 10 THEN '5-10'
+                WHEN trip_distance < 20 THEN '10-20'
+                ELSE '20+' END AS rango_millas,
+           CASE WHEN trip_distance < 1  THEN 1
+                WHEN trip_distance < 3  THEN 2
+                WHEN trip_distance < 5  THEN 3
+                WHEN trip_distance < 10 THEN 4
+                WHEN trip_distance < 20 THEN 5
+                ELSE 6 END AS orden
+    FROM trips_con_distancia
+)
+SELECT taxi_type, rango_millas, count(*) AS viajes,
+       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY taxi_type), 2) AS porcentaje
+FROM rangos
+GROUP BY taxi_type, rango_millas, orden
+ORDER BY taxi_type, orden
+
+taxi_type rango_millas   viajes  porcentaje
+    green          0-1   143214       15.12
+    green          1-3   510258       53.86
+    green          3-5   145455       15.35
+    green         5-10   107068       11.30
+    green        10-20    37191        3.93
+    green          20+     4246        0.45
+   yellow          0-1 14718949       21.55
+   yellow          1-3 32683580       47.85
+   yellow          3-5  8457502       12.38
+   yellow         5-10  6995964       10.24
+   yellow        10-20  4801916        7.03
+   yellow          20+   653053        0.96
+
+[3.604 s]
+
+----------------------------------------------------------------------
+-- [Q6] Diferencias en tarifa entre yellow y green
+SELECT taxi_type,
+       round(avg(fare_amount), 2)  AS tarifa_prom,
+       round(avg(total_amount), 2) AS total_prom,
+       round(avg(tip_amount), 2)   AS propina_prom,
+       round(avg(tolls_amount), 2) AS peajes_prom,
+       round(sum(fare_amount) FILTER (WHERE trip_distance BETWEEN 0.1 AND 100)
+             / sum(trip_distance) FILTER (WHERE trip_distance BETWEEN 0.1 AND 100), 2) AS tarifa_por_milla
+FROM trips_limpios
+GROUP BY taxi_type
+
+taxi_type  tarifa_prom  total_prom  propina_prom  peajes_prom  tarifa_por_milla
+    green        18.01       24.82          2.60         0.25              5.69
+   yellow        20.62       29.45          3.15         0.57              5.85
+
+[2.937 s]
+
+----------------------------------------------------------------------
+-- [Q7] Como pagan los pasajeros (0 flex, 1 tarjeta, 2 efectivo, 3 sin cargo, 4 disputa, 5 desconocido, 6 anulado)
+SELECT taxi_type, payment_type, count(*) AS viajes,
+       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY taxi_type), 2) AS porcentaje,
+       round(avg(tip_amount), 2) AS propina_prom
+FROM trips_limpios
+GROUP BY taxi_type, payment_type
+ORDER BY taxi_type, viajes DESC
+
+taxi_type  payment_type   viajes  porcentaje  propina_prom
+    green             1   674192       67.90          3.64
+    green             2   240645       24.24          0.00
+    green          <NA>    72708        7.32          1.73
+    green             3     4025        0.41          0.03
+    green             4     1312        0.13          0.00
+    green             5       28        0.00          0.00
+   yellow             1 49387113       70.59          4.33
+   yellow             0 11678824       16.69          0.53
+   yellow             2  8059584       11.52          0.00
+   yellow             4   559689        0.80          0.01
+   yellow             3   279101        0.40          0.01
+   yellow             5        1        0.00          0.00
+
+[2.398 s]
+
+----------------------------------------------------------------------
+-- [Q8] Porcentaje de propina sobre la tarifa, solo viajes con tarjeta
+SELECT taxi_type,
+       round(avg(100.0 * tip_amount / fare_amount), 2)                    AS propina_pct_prom,
+       round(quantile_cont(100.0 * tip_amount / fare_amount, 0.5), 2)     AS propina_pct_mediana
+FROM trips_limpios
+WHERE payment_type = 1 AND fare_amount > 0
+GROUP BY taxi_type
+
+taxi_type  propina_pct_prom  propina_pct_mediana
+    green             23.41                23.26
+   yellow             25.90                25.94
+
+[3.253 s]
+
+----------------------------------------------------------------------
+-- [Q9] Valores atipicos: percentiles altos y maximos de las variables clave
+SELECT taxi_type,
+       round(quantile_cont(trip_distance, 0.99) FILTER (WHERE trip_distance > 0), 1) AS dist_p99,
+       max(trip_distance)                           AS dist_max,
+       round(quantile_cont(duracion_min, 0.99), 1)  AS dur_p99_min,
+       round(max(duracion_min), 1)                  AS dur_max_min,
+       round(quantile_cont(total_amount, 0.99), 1)  AS total_p99,
+       max(total_amount)                            AS total_max
+FROM trips_limpios
+GROUP BY taxi_type
+
+taxi_type  dist_p99  dist_max  dur_p99_min  dur_max_min  total_p99  total_max
+    green      17.2 233972.43         75.4       1439.9       96.3    1678.20
+   yellow      19.9 398608.62         71.0       1440.0      105.2  335550.94
+
+[8.333 s]
+
+----------------------------------------------------------------------
+-- [Q10] Inconsistencias fisicas: velocidades imposibles (mas de 80 mph) o viajes de mas de 100 millas
+SELECT taxi_type,
+       count(*) FILTER (WHERE duracion_min > 0 AND trip_distance / (duracion_min / 60.0) > 80) AS velocidad_imposible,
+       count(*) FILTER (WHERE trip_distance > 100) AS mas_de_100_millas,
+       count(*) FILTER (WHERE total_amount > 500)  AS total_mayor_500
+FROM trips_limpios
+GROUP BY taxi_type
+
+taxi_type  velocidad_imposible  mas_de_100_millas  total_mayor_500
+    green                 3213                307               55
+   yellow                20837               2698             1611
+
+[2.999 s]
+
+----------------------------------------------------------------------
+-- [Q11] Los pasajeros nulos coinciden con algun tipo de pago?
+SELECT taxi_type, payment_type, count(*) AS viajes,
+       count(*) FILTER (WHERE passenger_count IS NULL) AS pasajeros_nulos,
+       round(100.0 * count(*) FILTER (WHERE passenger_count IS NULL) / count(*), 1) AS pct_pasajeros_nulos
+FROM trips_limpios
+GROUP BY taxi_type, payment_type
+ORDER BY taxi_type, viajes DESC
+
+taxi_type  payment_type   viajes  pasajeros_nulos  pct_pasajeros_nulos
+    green             1   674192                0                  0.0
+    green             2   240645                0                  0.0
+    green          <NA>    72708            72708                100.0
+    green             3     4025                0                  0.0
+    green             4     1312                0                  0.0
+    green             5       28                0                  0.0
+   yellow             1 49387113                0                  0.0
+   yellow             0 11678824         11678824                100.0
+   yellow             2  8059584                0                  0.0
+   yellow             4   559689                0                  0.0
+   yellow             3   279101                0                  0.0
+   yellow             5        1                0                  0.0
+
+[2.626 s]
