@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
-"""Descarga los archivos Parquet de 2026 del NYC TLC Trip Record Data.
+"""Descarga los archivos Parquet del NYC TLC Trip Record Data.
 
-Descarga los registros de viajes de taxis amarillos (yellow) y verdes (green)
-correspondientes al anio 2026, que es el conjunto de datos inicial del
-laboratorio. Este script solo contempla el anio 2026.
+Descarga los viajes de taxis amarillos (yellow) y verdes (green) de los anios
+que se pidan. Por defecto solo baja 2026 (conjunto inicial del laboratorio);
+para ampliar el sistema (Ejercicios 5 y 8) basta con pasar mas anios o cambiar
+ANIOS_POR_DEFECTO, sin tocar nada mas.
 
 Fuente oficial de los datos:
     https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 
 Uso:
-    python scripts/download_data.py                 # amarillos y verdes
+    python scripts/download_data.py                        # amarillos y verdes, 2026
     python scripts/download_data.py --taxi yellow
-    python scripts/download_data.py --taxi green
+    python scripts/download_data.py --years 2024 2026      # varios anios
+    python scripts/download_data.py --years 2024 2025 2026
+    python scripts/download_data.py --verify               # solo comprueba, no descarga
 
 Los archivos se guardan en:
     data/raw/<tipo>/<anio>/<nombre-original>.parquet
 
 Comportamiento:
   - La TLC publica cada mes con varias semanas de atraso, por lo que no todos
-    los meses de 2026 existen todavia. El script consulta al servidor que
+    los meses del anio en curso existen. El script le pregunta al servidor que
     meses estan publicados en lugar de suponerlos.
   - Un archivo que ya existe localmente no se vuelve a descargar.
   - La descarga se hace sobre un nombre temporal y solo se renombra al
     terminar, de modo que una interrupcion no deja archivos .parquet a medias.
+  - --verify compara cada archivo local contra el tamanio que reporta el
+    servidor (Content-Length) y lista lo que falta o esta incompleto.
 """
 
 import argparse
@@ -31,7 +36,7 @@ from pathlib import Path
 
 import requests
 
-ANIO = 2026
+ANIOS_POR_DEFECTO = (2026,)
 TIPOS_TAXI = ("yellow", "green")
 URL_BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data"
 DIR_DESTINO = Path("data/raw")
@@ -42,28 +47,36 @@ BLOQUE = 1024 * 1024        # 1 MiB por bloque de descarga
 SUFIJO_TEMPORAL = ".part"
 
 
-def construir_nombre(tipo: str, mes: int) -> str:
+def construir_nombre(tipo: str, anio: int, mes: int) -> str:
     """Nombre del archivo publicado por la TLC, p. ej. yellow_tripdata_2026-01.parquet."""
-    return f"{tipo}_tripdata_{ANIO}-{mes:02d}.parquet"
+    return f"{tipo}_tripdata_{anio}-{mes:02d}.parquet"
 
 
-def construir_url(tipo: str, mes: int) -> str:
+def construir_url(tipo: str, anio: int, mes: int) -> str:
     """URL completa del archivo Parquet mensual."""
-    return f"{URL_BASE}/{construir_nombre(tipo, mes)}"
+    return f"{URL_BASE}/{construir_nombre(tipo, anio, mes)}"
 
 
-def ruta_destino(tipo: str, mes: int) -> Path:
+def ruta_destino(tipo: str, anio: int, mes: int) -> Path:
     """Ruta local donde se guarda el archivo."""
-    return DIR_DESTINO / tipo / str(ANIO) / construir_nombre(tipo, mes)
+    return DIR_DESTINO / tipo / str(anio) / construir_nombre(tipo, anio, mes)
+
+
+def consultar_servidor(url: str):
+    """Devuelve (publicado, tamanio_en_bytes_o_None) sin descargar el archivo."""
+    try:
+        respuesta = requests.head(url, timeout=TIEMPO_ESPERA, allow_redirects=True)
+    except requests.RequestException:
+        return False, None
+    if not respuesta.ok:
+        return False, None
+    longitud = respuesta.headers.get("Content-Length")
+    return True, int(longitud) if longitud else None
 
 
 def esta_publicado(url: str) -> bool:
     """Indica si el archivo existe en el servidor (sin descargarlo)."""
-    try:
-        respuesta = requests.head(url, timeout=TIEMPO_ESPERA, allow_redirects=True)
-    except requests.RequestException:
-        return False
-    return respuesta.ok
+    return consultar_servidor(url)[0]
 
 
 def formato_tamanio(n: float) -> str:
@@ -103,21 +116,21 @@ def descargar_archivo(url: str, destino: Path) -> int:
     raise requests.RequestException(f"no se pudo descargar {url}: {ultimo_error}")
 
 
-def descargar(tipo: str) -> dict:
-    """Descarga todos los meses publicados de un tipo de taxi para 2026."""
-    print(f"\n=== {tipo.upper()} {ANIO} ===")
+def descargar(tipo: str, anio: int) -> dict:
+    """Descarga todos los meses publicados de un tipo de taxi para un anio."""
+    print(f"\n=== {tipo.upper()} {anio} ===")
     resumen = {"descargados": 0, "omitidos": 0, "no_publicados": [], "fallidos": []}
 
     for mes in range(1, 13):
-        etiqueta = f"{ANIO}-{mes:02d}"
-        destino = ruta_destino(tipo, mes)
+        etiqueta = f"{anio}-{mes:02d}"
+        destino = ruta_destino(tipo, anio, mes)
 
         if destino.exists() and destino.stat().st_size > 0:
             print(f"  {etiqueta}  ya existe, se omite")
             resumen["omitidos"] += 1
             continue
 
-        url = construir_url(tipo, mes)
+        url = construir_url(tipo, anio, mes)
         if not esta_publicado(url):
             print(f"  {etiqueta}  aun no publicado por la TLC")
             resumen["no_publicados"].append(etiqueta)
@@ -136,25 +149,82 @@ def descargar(tipo: str) -> dict:
     return resumen
 
 
+def verificar(tipo: str, anio: int) -> dict:
+    """Compara los archivos locales contra lo publicado en el servidor."""
+    print(f"\n=== VERIFICACION {tipo.upper()} {anio} ===")
+    estado = {"ok": 0, "faltantes": [], "tamanio_distinto": [], "no_publicados": 0}
+
+    for mes in range(1, 13):
+        etiqueta = f"{anio}-{mes:02d}"
+        destino = ruta_destino(tipo, anio, mes)
+        publicado, tamanio_remoto = consultar_servidor(construir_url(tipo, anio, mes))
+        existe = destino.exists() and destino.stat().st_size > 0
+
+        if not publicado:
+            if existe:
+                print(f"  {etiqueta}  existe local pero el servidor no responde")
+            else:
+                print(f"  {etiqueta}  no publicado (esperado)")
+                estado["no_publicados"] += 1
+            continue
+
+        if not existe:
+            print(f"  {etiqueta}  FALTA (publicado en el servidor)")
+            estado["faltantes"].append(etiqueta)
+        elif tamanio_remoto is not None and destino.stat().st_size != tamanio_remoto:
+            print(f"  {etiqueta}  TAMANIO DISTINTO: local {destino.stat().st_size} "
+                  f"vs servidor {tamanio_remoto}")
+            estado["tamanio_distinto"].append(etiqueta)
+        else:
+            print(f"  {etiqueta}  ok ({formato_tamanio(destino.stat().st_size)})")
+            estado["ok"] += 1
+
+    return estado
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=f"Descarga los datos de taxis de {ANIO} del NYC TLC."
+        description="Descarga los datos de taxis del NYC TLC."
     )
     parser.add_argument(
         "--taxi", choices=(*TIPOS_TAXI, "all"), default="all",
         help="tipo de taxi a descargar (por defecto: all)",
     )
+    parser.add_argument(
+        "--years", type=int, nargs="+", default=list(ANIOS_POR_DEFECTO),
+        help=f"anios a descargar (por defecto: {' '.join(map(str, ANIOS_POR_DEFECTO))})",
+    )
+    parser.add_argument(
+        "--verify", action="store_true",
+        help="solo verifica los archivos locales contra el servidor, no descarga",
+    )
     argumentos = parser.parse_args()
 
     tipos = TIPOS_TAXI if argumentos.taxi == "all" else (argumentos.taxi,)
+    anios = sorted(set(argumentos.years))
+
+    if argumentos.verify:
+        problemas = 0
+        total_ok = 0
+        for anio in anios:
+            for tipo in tipos:
+                estado = verificar(tipo, anio)
+                total_ok += estado["ok"]
+                problemas += len(estado["faltantes"]) + len(estado["tamanio_distinto"])
+        print("\n" + "=" * 60)
+        print(f"  archivos correctos: {total_ok}")
+        print(f"  con problemas     : {problemas}")
+        print("=" * 60)
+        return 1 if problemas else 0
 
     total = {"descargados": 0, "omitidos": 0, "no_publicados": [], "fallidos": []}
-    for tipo in tipos:
-        resumen = descargar(tipo)
-        total["descargados"] += resumen["descargados"]
-        total["omitidos"] += resumen["omitidos"]
-        total["no_publicados"] += [f"{tipo} {m}" for m in resumen["no_publicados"]]
-        total["fallidos"] += [f"{tipo} {m}" for m in resumen["fallidos"]]
+    for anio in anios:
+        for tipo in tipos:
+            resumen = descargar(tipo, anio)
+            total["descargados"] += resumen["descargados"]
+            total["omitidos"] += resumen["omitidos"]
+            total["no_publicados"] += [f"{tipo} {m}" for m in resumen["no_publicados"]]
+            total["fallidos"] += [f"{tipo} {m}" for m in resumen["fallidos"]]
 
     print("\n" + "=" * 60)
     print("RESUMEN")

@@ -119,15 +119,59 @@ generar los resultados principales.
 
 ## Como levantar el ambiente
 
-<!-- TODO (Ejercicio 1.5) -->
+Requisitos: Docker con Docker Compose y Git.
+
+```bash
+git clone https://github.com/<su-usuario>/duckdb.git
+cd duckdb
+docker compose up --build -d
+```
+
+La primera vez tarda varios minutos porque construye dos imagenes: `lab`
+(Python 3.11, JupyterLab, DuckDB, pandas, pyarrow, matplotlib, requests) y
+`metabase` (Metabase con el driver de DuckDB). Para comprobar que todo quedo
+arriba:
+
+```bash
+docker compose ps                                              # los dos servicios en "running"
+docker compose exec lab python -c "import duckdb; print(duckdb.__version__)"
+curl -s http://localhost:3000/api/health                       # {"status":"ok"}
+```
+
+- JupyterLab: <http://localhost:8888> (sin token ni contrasena)
+- Metabase: <http://localhost:3000> (la primera vez pide crear un usuario)
+
+Para apagarlo: `docker compose down`. Los datos y los notebooks viven en carpetas
+del proyecto montadas dentro del contenedor, asi que no se pierden al apagarlo.
+Todos los comandos de abajo se ejecutan dentro del contenedor `lab`, con
+`docker compose exec lab <comando>`.
 
 ## Como descargar los datos
 
-<!-- TODO (Ejercicios 2.6, 5.1 y 8.1) -->
+```bash
+docker compose exec lab python scripts/download_data.py                      # 2026 (por defecto)
+docker compose exec lab python scripts/download_data.py --years 2024 2026    # Ejercicio 5
+docker compose exec lab python scripts/download_data.py --years 2024 2025 2026   # Ejercicio 8
+docker compose exec lab python scripts/download_data.py --verify --years 2024 2025 2026
+```
+
+Los archivos quedan en `data/raw/<tipo>/<anio>/`. El script no vuelve a bajar
+un archivo que ya existe, y `--verify` compara cada archivo local contra el
+tamano que reporta el servidor para confirmar que la descarga esta completa.
+Los cambios hechos al script estan en `docs/ejercicios_1_2.md`.
 
 ## Como ejecutar el analisis
 
-<!-- TODO -->
+Las consultas estan en `sql/` y se ejecutan en orden dentro del contenedor:
+
+```bash
+docker compose exec lab python scripts/run_sql.py sql/00_vistas.sql sql/03_exploracion.sql
+docker compose exec lab python scripts/run_sql.py sql/00_vistas.sql sql/04_eda.sql
+```
+
+`00_vistas.sql` crea las vistas sobre los Parquet (`data/raw/*/*/*.parquet`),
+por lo que al descargar anios nuevos las consultas los toman sin cambios. La
+documentacion de cada consulta esta en `docs/consultas.md`.
 
 ## Como reproducir los benchmarks
 
