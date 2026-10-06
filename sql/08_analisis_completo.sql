@@ -64,3 +64,24 @@ SELECT taxi_type, anio, count(*) AS filas,
 FROM taxi_trips
 GROUP BY taxi_type, anio
 ORDER BY taxi_type, anio;
+
+-- [8.6b] Que criterio de validez produce los invalidos de yellow en cada anio.
+SELECT anio,
+       count(*) FILTER (WHERE NOT es_valido) AS invalidos,
+       count(*) FILTER (WHERE strftime(pickup_ts, '%Y-%m')
+                              <> regexp_extract(source_file, '(\d{4}-\d{2})\.parquet$', 1)) AS fuera_del_mes,
+       count(*) FILTER (WHERE dropoff_ts < pickup_ts) AS bajada_antes_de_subida,
+       count(*) FILTER (WHERE dropoff_ts - pickup_ts > INTERVAL 24 HOUR) AS mas_de_24h,
+       count(*) FILTER (WHERE fare_amount < 0) AS tarifa_negativa,
+       count(*) FILTER (WHERE total_amount <= 0) AS total_no_positivo
+FROM taxi_trips
+WHERE taxi_type = 'yellow'
+GROUP BY anio
+ORDER BY anio;
+
+-- [8.6c] Invalidos de yellow 2025 por mes y tipo de pago.
+SELECT mes, payment_type, count(*) AS invalidos
+FROM taxi_trips
+WHERE taxi_type = 'yellow' AND anio = 2025 AND NOT es_valido
+GROUP BY ALL
+ORDER BY mes, invalidos DESC;

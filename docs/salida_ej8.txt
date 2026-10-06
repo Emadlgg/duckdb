@@ -20,7 +20,7 @@ taxi_type  anio  archivos    filas
    yellow  2025        12 48722602
    yellow  2026         8 29703355
 
-[0.602 s]
+[1.347 s]
 
 ----------------------------------------------------------------------
 -- [8.5a] Evolucion mensual, normalizada por cantidad de dias observados.
@@ -98,7 +98,7 @@ taxi_type  anio  mes  viajes  dias  viajes_por_dia
    yellow  2026    7 3514687    31        113377.0
    yellow  2026    8 3320813    31        107123.0
 
-[2.211 s]
+[2.207 s]
 
 ----------------------------------------------------------------------
 -- [8.5b] Resumen comparable de enero-agosto.
@@ -122,7 +122,7 @@ taxi_type  anio   viajes  viajes_por_dia  distancia_mediana  total_promedio  pct
    yellow  2025 29716566        122290.0               1.87           28.44        67.76     20.43
    yellow  2026 29535723        121546.0               1.92           30.40        64.12     26.12
 
-[3.184 s]
+[3.330 s]
 
 ----------------------------------------------------------------------
 -- [8.5c] Cambio porcentual del volumen diario entre anios consecutivos.
@@ -149,7 +149,7 @@ taxi_type  anio  viajes_por_dia  cambio_pct
    yellow  2025        122290.0        15.0
    yellow  2026        121546.0        -0.6
 
-[0.390 s]
+[0.493 s]
 
 ----------------------------------------------------------------------
 -- [8.5d] Evolucion de propinas con tarjeta en el periodo comparable.
@@ -170,7 +170,7 @@ taxi_type  anio  propina_pct_mediana  propina_dolares_promedio
    yellow  2025                26.63                      4.30
    yellow  2026                26.38                      4.28
 
-[2.133 s]
+[2.233 s]
 
 ----------------------------------------------------------------------
 -- [8.6] Calidad: cambio en los principales problemas por anio.
@@ -190,5 +190,100 @@ taxi_type  anio    filas  pct_invalidos  pct_distancia_no_positiva  pct_pasajero
    yellow  2025 48722602           5.88                       2.88                23.83
    yellow  2026 29703355           0.56                       3.21                25.98
 
-[0.541 s]
+[1.003 s]
 
+----------------------------------------------------------------------
+-- [8.6b] Que criterio de validez produce los invalidos de yellow en cada anio.
+SELECT anio,
+       count(*) FILTER (WHERE NOT es_valido) AS invalidos,
+       count(*) FILTER (WHERE strftime(pickup_ts, '%Y-%m')
+                              <> regexp_extract(source_file, '(\d{4}-\d{2})\.parquet$', 1)) AS fuera_del_mes,
+       count(*) FILTER (WHERE dropoff_ts < pickup_ts) AS bajada_antes_de_subida,
+       count(*) FILTER (WHERE dropoff_ts - pickup_ts > INTERVAL 24 HOUR) AS mas_de_24h,
+       count(*) FILTER (WHERE fare_amount < 0) AS tarifa_negativa,
+       count(*) FILTER (WHERE total_amount <= 0) AS total_no_positivo
+FROM taxi_trips
+WHERE taxi_type = 'yellow'
+GROUP BY anio
+ORDER BY anio
+
+ anio  invalidos  fuera_del_mes  bajada_antes_de_subida  mas_de_24h  tarifa_negativa  total_no_positivo
+ 2024     741131            420                    1575         230           731024             614406
+ 2025    2863044            214                    2235         352          2848620             980522
+ 2026     167632            146                      10         263           157364             167093
+
+[4.007 s]
+
+----------------------------------------------------------------------
+-- [8.6c] Invalidos de yellow 2025 por mes y tipo de pago.
+SELECT mes, payment_type, count(*) AS invalidos
+FROM taxi_trips
+WHERE taxi_type = 'yellow' AND anio = 2025 AND NOT es_valido
+GROUP BY ALL
+ORDER BY mes, invalidos DESC
+
+ mes  payment_type  invalidos
+   1             0      84979
+   1             4      37649
+   1             2      14174
+   1             3       8235
+   1             1        115
+   1             5          1
+   2             0     127989
+   2             4      35077
+   2             2      13353
+   2             3       7112
+   2             1         91
+   3             0     140582
+   3             4      43140
+   3             2      17120
+   3             3       8888
+   3             1        124
+   4             0     114625
+   4             4      45948
+   4             2      17841
+   4             3       9295
+   4             1        102
+   5             0     247793
+   5             4      49554
+   5             2      19048
+   5             3       9982
+   5             1         94
+   6             0     202443
+   6             4      47078
+   6             2      17671
+   6             3       9469
+   6             1        287
+   6             5          1
+   7             0     171060
+   7             4      49586
+   7             2      17798
+   7             3       9508
+   7             1         43
+   8             0     183941
+   8             4      50370
+   8             2      17856
+   8             3       9767
+   8             1         83
+   9             0     174692
+   9             4      50998
+   9             2      18315
+   9             3       9703
+   9             1         52
+  10             0     253349
+  10             4      44229
+  10             2      16147
+  10             3       8456
+  10             1        158
+  11             0     347409
+  11             4      31438
+  11             2      11505
+  11             3       5926
+  11             1       1233
+  12             4      31861
+  12             2      11425
+  12             3       5780
+  12             1        332
+  12             0        164
+
+[0.096 s]

@@ -9,21 +9,42 @@ import requests
 
 PREGUNTAS = [
     {
-        "name": "1. Viajes por mes",
-        "description": "Evolucion mensual del volumen valido de yellow y green entre 2024 y 2026.",
+        "name": "1a. Viajes por mes - yellow",
+        "description": "Evolucion mensual del volumen valido de yellow. Se grafica por separado porque yellow tiene unas cien veces mas viajes que green.",
         "display": "line",
-        "sql": """SELECT taxi_type, make_date(anio, mes, 1) AS mes, count(*) AS viajes
-                  FROM taxi_trips WHERE es_valido GROUP BY ALL ORDER BY mes, taxi_type""",
-        "settings": {"graph.dimensions": ["mes", "taxi_type"], "graph.metrics": ["viajes"]},
+        "sql": """SELECT make_date(anio, mes, 1) AS mes, count(*) AS viajes
+                  FROM taxi_trips WHERE es_valido AND taxi_type = 'yellow'
+                  GROUP BY ALL ORDER BY mes""",
+        "settings": {"graph.dimensions": ["mes"], "graph.metrics": ["viajes"]},
     },
     {
-        "name": "2. Viajes diarios por año",
-        "description": "Promedio diario, para comparar periodos de distinta duracion.",
+        "name": "1b. Viajes por mes - green",
+        "description": "Evolucion mensual del volumen valido de green, con su propia escala para que se vea su tendencia y estacionalidad.",
+        "display": "line",
+        "sql": """SELECT make_date(anio, mes, 1) AS mes, count(*) AS viajes
+                  FROM taxi_trips WHERE es_valido AND taxi_type = 'green'
+                  GROUP BY ALL ORDER BY mes""",
+        "settings": {"graph.dimensions": ["mes"], "graph.metrics": ["viajes"]},
+    },
+    {
+        "name": "2a. Viajes diarios por año - yellow",
+        "description": "Promedio diario de viajes validos de yellow. 2026 incluye solo enero-agosto, el promedio por dia compensa la diferencia.",
         "display": "bar",
-        "sql": """SELECT taxi_type, anio::VARCHAR AS anio,
+        "sql": """SELECT anio::VARCHAR AS anio,
                          round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
-                  FROM taxi_trips WHERE es_valido GROUP BY ALL ORDER BY anio, taxi_type""",
-        "settings": {"graph.dimensions": ["anio", "taxi_type"], "graph.metrics": ["viajes_por_dia"]},
+                  FROM taxi_trips WHERE es_valido AND taxi_type = 'yellow'
+                  GROUP BY ALL ORDER BY anio""",
+        "settings": {"graph.dimensions": ["anio"], "graph.metrics": ["viajes_por_dia"]},
+    },
+    {
+        "name": "2b. Viajes diarios por año - green",
+        "description": "Promedio diario de viajes validos de green, en su propia escala. 2026 incluye solo enero-agosto.",
+        "display": "bar",
+        "sql": """SELECT anio::VARCHAR AS anio,
+                         round(count(*) / count(DISTINCT pickup_ts::DATE)) AS viajes_por_dia
+                  FROM taxi_trips WHERE es_valido AND taxi_type = 'green'
+                  GROUP BY ALL ORDER BY anio""",
+        "settings": {"graph.dimensions": ["anio"], "graph.metrics": ["viajes_por_dia"]},
     },
     {
         "name": "3. Demanda por hora",
@@ -103,16 +124,21 @@ PREGUNTAS = [
     },
     {
         "name": "9. Principales zonas de origen",
-        "description": "Cinco zonas de recogida con mayor volumen por tipo y año.",
+        "description": "Cinco zonas de recogida con mas viajes por tipo y año, como porcentaje de los viajes del mismo tipo y año. Se usa porcentaje porque 2026 solo tiene enero-agosto y porque yellow tiene mucho mas volumen que green.",
         "display": "bar",
         "sql": """WITH zonas AS (
-                      SELECT taxi_type, anio, PULocationID, count(*) AS viajes,
+                      SELECT taxi_type, anio, PULocationID,
+                             100.0 * count(*) / sum(count(*)) OVER (PARTITION BY taxi_type, anio) AS porcentaje,
                              row_number() OVER (PARTITION BY taxi_type, anio ORDER BY count(*) DESC) AS posicion
                       FROM taxi_trips WHERE es_valido GROUP BY taxi_type, anio, PULocationID
                   )
-                  SELECT 'Zona ' || PULocationID AS zona, taxi_type || ' ' || anio AS serie, viajes
-                  FROM zonas WHERE posicion <= 5 ORDER BY viajes DESC""",
-        "settings": {"graph.dimensions": ["zona", "serie"], "graph.metrics": ["viajes"]},
+                  SELECT 'Zona ' || PULocationID AS zona, taxi_type || ' ' || anio AS serie,
+                         round(porcentaje, 2) AS porcentaje
+                  FROM zonas WHERE posicion <= 5 ORDER BY porcentaje DESC""",
+        "settings": {
+            "graph.dimensions": ["zona", "serie"], "graph.metrics": ["porcentaje"],
+            "graph.y_axis.title_text": "Porcentaje de los viajes del año",
+        },
     },
     {
         "name": "10. Comparacion enero-agosto",
@@ -223,6 +249,14 @@ def main() -> None:
         api(sesion, "POST", f"{args.url}/api/card/{tarjeta['id']}/query", json={"parameters": []})
         tarjetas.append(tarjeta)
         print(f"OK  {tarjeta['name']}")
+
+    # Las tarjetas de la coleccion que ya no estan en PREGUNTAS (por ejemplo las
+    # versiones anteriores de 1 y 2) se archivan para que no queden sueltas.
+    vigentes = {pregunta["name"] for pregunta in PREGUNTAS}
+    for nombre, tarjeta in por_nombre.items():
+        if nombre not in vigentes:
+            api(sesion, "PUT", f"{args.url}/api/card/{tarjeta['id']}", json={"archived": True})
+            print(f"ARCHIVADA (ya no se usa) {nombre}")
 
     tableros = api(sesion, "GET", f"{args.url}/api/dashboard")
     tablero = next((t for t in tableros if t["name"] == "NYC Taxi: 2024-2026"), None)
